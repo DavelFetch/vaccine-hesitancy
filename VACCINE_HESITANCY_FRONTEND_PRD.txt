@@ -1,0 +1,542 @@
+# VACCINE HESITANCY ANALYSIS FRONTEND PLATFORM
+## Product Requirements Document (PRD)
+
+### PROJECT OVERVIEW
+**Project Name:** Vaccine Hesitancy Analysis Frontend Platform
+**Target Audience:** Health Affairs Professionals, Policy Makers, Healthcare Researchers
+**Project Type:** MVP Web Application
+**Architecture:** Single-Page Application (SPA) with Microservices Backend
+
+### EXECUTIVE SUMMARY
+A comprehensive web-based dashboard for analyzing vaccine hesitancy patterns across multiple data sources including demographic surveys, social media sentiment, official health guidelines, and voice analysis. The platform integrates 4 specialized AI agents to provide actionable insights for health policy decision-making.
+
+---
+
+## TECHNICAL ARCHITECTURE
+
+### FRONTEND STACK
+- **Framework:** Next.js 14+ (React-based)
+- **Styling:** Tailwind CSS + shadcn/ui components
+- **Maps:** Mapbox GL JS for interactive UK regional mapping
+- **Charts:** Recharts or Chart.js for data visualizations
+- **State Management:** React Context API / Zustand
+- **HTTP Client:** Axios for API calls
+- **Export:** xlsx.js for Excel exports, PDF.js for document handling
+
+### BACKEND ARCHITECTURE
+**Microservices Approach - 4 Separate Agent Containers:**
+
+1. **Vaccine Hesitancy Insights Agent** (Port 8000)
+   - **Technology:** Python uAgents + Supabase MCP + ASI1
+   - **Database:** PostgreSQL (Supabase)
+   - **Capabilities:** Demographic analysis, regional data, trend analysis
+   - **Endpoints:** REST API for data queries by region, age, sex, ethnicity, etc.
+
+2. **X Analysis Agent** (Port 8001)
+   - **Technology:** Python uAgents + Twitter API + ASI1
+   - **Database:** PostgreSQL (Supabase)
+   - **Capabilities:** Tweet scraping, sentiment analysis, user impact scoring
+   - **Endpoints:** REST API for sentiment data, user analysis, trending topics
+
+3. **Vaccine Resource Agent** (Port 8002)
+   - **Technology:** Python uAgents + Qdrant Vector DB + OpenAI Embeddings
+   - **Database:** Qdrant Vector Database
+   - **Capabilities:** Document search, UK health guidelines, chat interface
+   - **Endpoints:** Chat protocol + document search API
+
+4. **Voice Analyzer Agent** (Port 8003)
+   - **Technology:** Python uAgents + Speech Recognition + ASI1
+   - **Capabilities:** Audio transcription, hesitancy analysis, keyword extraction
+   - **Endpoints:** REST API for audio/text analysis
+
+### CONTAINERIZATION STRATEGY
+```
+Docker Architecture:
+├── frontend-container (Next.js app)
+├── hesitancy-insights-agent-container (Port 8000)
+├── x-analysis-agent-container (Port 8001)
+├── vaccine-resource-agent-container (Port 8002)
+├── voice-analyzer-agent-container (Port 8003)
+└── docker-compose.yml (orchestration)
+```
+
+---
+
+## PAGE SPECIFICATIONS
+
+### PAGE 1: HEALTH BOARD DASHBOARD
+**Primary Agent:** Vaccine Hesitancy Insights Agent (Port 8000)
+**Purpose:** Interactive UK regional analysis with demographic filtering
+
+#### CORE FEATURES
+1. **Interactive UK Map (Mapbox)**
+   - Choropleth visualization of hesitancy rates by region
+   - Click-to-drill-down functionality
+   - Color-coded regional data overlay
+   - Hover tooltips with key statistics
+
+2. **Dual-Panel Comparison System**
+   - Side-by-side visualization panels
+   - Independent filter controls for each panel
+   - Synchronized or independent data views
+   - Comparison mode toggle
+
+3. **Advanced Filtering System**
+   - **Geographic:** UK regions (North West, London, Scotland, Wales, etc.)
+   - **Demographics:** Age bands, sex, ethnicity, religion
+   - **Health:** Disability status, underlying conditions, CEV status
+   - **Socioeconomic:** IMD quintile, employment status, household type
+   - **Behavioral:** Caregiver status, expense affordability
+
+4. **Data Visualization Options**
+   - **Regional Map:** Choropleth with hesitancy percentages
+   - **Bar Charts:** Demographic breakdowns
+   - **Line Charts:** Trends over time periods
+   - **Pie Charts:** Categorical distributions
+   - **Heatmaps:** Cross-demographic correlations
+
+5. **AI-Powered Chatbot**
+   - Natural language queries to Supabase data
+   - Contextual insights and explanations
+   - Data interpretation assistance
+   - Export query results
+
+#### API INTEGRATION
+```
+Available Endpoints:
+- POST /vh/region (regional data)
+- POST /vh/age_band (age-based analysis)
+- POST /vh/sex (gender analysis)
+- POST /vh/ethnicity (ethnic group analysis)
+- POST /vh/religion (religious group analysis)
+- POST /vh/disability (disability status analysis)
+- POST /vh/trends (temporal trend analysis)
+- POST /vh/barriers (vaccination barriers)
+- POST /vh/reasons (hesitancy reasons)
+- POST /vh/agent (natural language queries)
+```
+
+#### EXPORT FUNCTIONALITY
+- **Excel Export:** Full dataset with filters applied (.xlsx)
+- **PDF Reports:** Formatted analysis reports
+- **CSV Export:** Raw data for further analysis
+- **Image Export:** Charts and maps as PNG/SVG
+
+### PAGE 2: SOCIAL MEDIA ANALYSIS
+**Primary Agent:** X Analysis Agent (Port 8001)
+**Purpose:** Twitter/X sentiment analysis and user impact assessment
+
+#### CORE FEATURES
+1. **Sentiment Overview Dashboard**
+   - Real-time sentiment distribution (Positive/Negative/Neutral)
+   - Sentiment trends over time (day/week/month views)
+   - Volume metrics and engagement statistics
+
+2. **User Impact Analysis**
+   - Top influencers by engagement score
+   - Author impact scoring algorithm
+   - User profile analysis and reach metrics
+   - Influence network visualization
+
+3. **Content Analysis**
+   - Trending hashtags and keywords
+   - Most impactful tweets by engagement
+   - Sentiment-categorized tweet feeds
+   - Content themes and topic clustering
+
+4. **Temporal Analysis**
+   - Sentiment timeline visualization
+   - Event-driven sentiment spikes
+   - Comparative period analysis
+   - Trend prediction indicators
+
+#### API INTEGRATION
+```
+Available Endpoints:
+- POST /x/scrape_tweets (tweet collection)
+- POST /x/sentiment (sentiment analysis)
+- POST /x/trends (trending analysis)
+- POST /x/tweets (tweet retrieval with filters)
+- POST /x/user_analysis (user impact analysis)
+- POST /x/dashboard (comprehensive dashboard data)
+- POST /x/sentiment_timeline (temporal sentiment data)
+- POST /x/top_users (influential user ranking)
+```
+
+#### VISUALIZATION COMPONENTS
+- **Sentiment Distribution:** Donut charts with percentages
+- **Timeline Charts:** Line graphs for sentiment trends
+- **User Rankings:** Leaderboard components
+- **Tweet Cards:** Social media post previews
+- **Word Clouds:** Trending terms visualization
+
+### PAGE 3: VACCINE RESOURCE CENTER
+**Primary Agent:** Vaccine Resource Agent (Port 8002)
+**Purpose:** Official health guidelines search and document access
+
+#### CORE FEATURES
+1. **Document Search Interface**
+   - Semantic search through UK health guidelines
+   - Advanced filtering by document type, date, topic
+   - Relevance scoring and result ranking
+   - Search history and saved queries
+
+2. **AI-Powered Chat Assistant**
+   - Natural language queries about vaccine guidelines
+   - Context-aware responses with source citations
+   - Medical terminology support
+   - Follow-up question suggestions
+
+3. **Document Library**
+   - Categorized document browser
+   - UK Green Book chapters
+   - NICE clinical guidelines
+   - WHO recommendations
+   - PDF viewer with annotation support
+
+4. **Knowledge Base**
+   - Frequently asked questions
+   - Quick reference guides
+   - Evidence-based fact sheets
+   - Clinical decision support tools
+
+#### API INTEGRATION
+```
+Available Endpoints:
+- Chat Protocol: WebSocket connection for real-time chat
+- Document Search: Vector similarity search via Qdrant
+- PDF Access: Direct document download links
+- Citation Tracking: Source attribution system
+```
+
+#### DOCUMENT MANAGEMENT
+- **PDF Downloads:** Direct access to official documents
+- **Bookmarking:** Save important documents and sections
+- **Annotation:** Highlight and note-taking capabilities
+- **Version Control:** Track document updates and changes
+
+### PAGE 4: VOICE ANALYSIS CENTER
+**Primary Agent:** Voice Analyzer Agent (Port 8003)
+**Purpose:** Audio transcription and vaccine hesitancy pattern analysis
+
+#### CORE FEATURES
+1. **Audio Upload Interface**
+   - Drag-and-drop file upload
+   - Multiple format support (MP3, WAV, M4A, OGG)
+   - File size validation and compression
+   - Batch upload capabilities
+
+2. **Transcription Services**
+   - Real-time speech-to-text conversion
+   - Confidence scoring and accuracy indicators
+   - Speaker identification and segmentation
+   - Timestamp synchronization
+
+3. **Hesitancy Analysis Dashboard**
+   - AI-powered hesitancy pattern detection
+   - Categorized concern identification
+   - Sentiment scoring and emotional analysis
+   - Keyword extraction and tagging
+
+4. **Text Analysis Mode**
+   - Direct text input for analysis
+   - Paste or type content for processing
+   - Comparative analysis tools
+   - Bulk text processing
+
+#### API INTEGRATION
+```
+Available Endpoints:
+- POST /analyze_audio (audio file analysis)
+- POST /analyze_text (text-only analysis)
+- GET /health (service health check)
+```
+
+#### ANALYSIS OUTPUTS
+- **Hesitancy Scoring:** 0-100% hesitancy level classification
+- **Category Breakdown:** Safety, trust, religious, freedom concerns
+- **Supporting Evidence:** Exact quotes and context
+- **Confidence Metrics:** Analysis reliability indicators
+
+---
+
+## DATA MANAGEMENT
+
+### CACHING STRATEGY
+- **Frontend Caching:** React Query for API response caching
+- **Browser Storage:** LocalStorage for user preferences
+- **Session Management:** SessionStorage for temporary data
+- **Error Handling:** Cached data fallback during agent downtime
+
+### DATA FLOW ARCHITECTURE
+```
+User Interface → Frontend (Next.js) → REST APIs → Agent Services → Databases
+                     ↓
+               Cache Layer (React Query)
+                     ↓
+               Error Handling & Fallbacks
+```
+
+### PERFORMANCE OPTIMIZATION
+- **Lazy Loading:** Components and data loaded on demand
+- **Pagination:** Large datasets split into manageable chunks
+- **Debouncing:** Search and filter input optimization
+- **Compression:** API response compression
+
+---
+
+## USER EXPERIENCE DESIGN
+
+### NAVIGATION STRUCTURE
+**Single-Page Application with Tab-Based Navigation:**
+- **Primary Navigation:** Horizontal tab bar
+- **Secondary Navigation:** Contextual sidebars
+- **Breadcrumbs:** Current location indicators
+- **Quick Actions:** Floating action buttons
+
+### RESPONSIVE DESIGN
+- **Desktop First:** Optimized for professional workstations
+- **Tablet Support:** Responsive layouts for mobile devices
+- **Mobile Considerations:** Future enhancement phase
+
+### ACCESSIBILITY
+- **WCAG 2.1 AA Compliance:** Screen reader support
+- **Keyboard Navigation:** Full keyboard accessibility
+- **Color Contrast:** High contrast mode support
+- **Font Scaling:** Adjustable text sizes
+
+---
+
+## DEVELOPMENT ROADMAP
+
+### PHASE 1: FOUNDATION (Weeks 1-2)
+- [ ] Project setup and Docker containerization
+- [ ] Next.js application scaffolding
+- [ ] Basic routing and navigation structure
+- [ ] Agent connectivity testing
+- [ ] UI component library setup
+
+### PHASE 2: PAGE 1 - HEALTH BOARD (Weeks 3-4)
+- [ ] Mapbox integration and UK map setup
+- [ ] Vaccine Hesitancy Insights Agent integration
+- [ ] Filtering system implementation
+- [ ] Data visualization components
+- [ ] Export functionality
+
+### PHASE 3: PAGE 2 - SOCIAL MEDIA (Weeks 5-6)
+- [ ] X Analysis Agent integration
+- [ ] Sentiment analysis dashboard
+- [ ] User impact visualization
+- [ ] Timeline and trend components
+- [ ] Real-time data updates
+
+### PHASE 4: PAGE 3 - VACCINE RESOURCES (Weeks 7-8)
+- [ ] Vaccine Resource Agent integration
+- [ ] Document search interface
+- [ ] Chat assistant implementation
+- [ ] PDF viewer and download system
+- [ ] Knowledge base organization
+
+### PHASE 5: PAGE 4 - VOICE ANALYSIS (Weeks 9-10)
+- [ ] Voice Analyzer Agent integration
+- [ ] Audio upload interface
+- [ ] Transcription display
+- [ ] Hesitancy analysis visualization
+- [ ] Text analysis mode
+
+### PHASE 6: INTEGRATION & POLISH (Weeks 11-12)
+- [ ] Cross-page navigation refinement
+- [ ] Performance optimization
+- [ ] Error handling improvements
+- [ ] User experience testing
+- [ ] Documentation completion
+
+---
+
+## TECHNICAL SPECIFICATIONS
+
+### ENVIRONMENT VARIABLES
+```
+# Frontend
+NEXT_PUBLIC_API_BASE_URL=http://localhost
+NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN=your_mapbox_token
+
+# Agent Endpoints
+NEXT_PUBLIC_HESITANCY_AGENT_URL=http://localhost:8000
+NEXT_PUBLIC_X_ANALYSIS_AGENT_URL=http://localhost:8001
+NEXT_PUBLIC_VACCINE_RESOURCE_AGENT_URL=http://localhost:8002
+NEXT_PUBLIC_VOICE_ANALYZER_AGENT_URL=http://localhost:8003
+```
+
+### DOCKER COMPOSE CONFIGURATION
+```yaml
+version: '3.8'
+services:
+  frontend:
+    build: ./frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=development
+    depends_on:
+      - hesitancy-agent
+      - x-analysis-agent
+      - vaccine-resource-agent
+      - voice-analyzer-agent
+
+  hesitancy-agent:
+    build: ./agents/Vaccine_Hesitancy_Insights_Agent
+    ports:
+      - "8000:8000"
+    environment:
+      - SUPABASE_ACCESS_TOKEN=${SUPABASE_ACCESS_TOKEN}
+      - ASI1_API_KEY=${ASI1_API_KEY}
+
+  x-analysis-agent:
+    build: ./agents/X_Analysis_Agent
+    ports:
+      - "8001:8001"
+    environment:
+      - RAPIDAPI_KEY=${RAPIDAPI_KEY}
+      - ASI1_API_KEY=${ASI1_API_KEY}
+
+  vaccine-resource-agent:
+    build: ./agents/Vaccine_Resource_Agent
+    ports:
+      - "8002:8002"
+    environment:
+      - QDRANT_URL=${QDRANT_URL}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+
+  voice-analyzer-agent:
+    build: ./agents/Vaccine_Hesitancy_Voice_Analyzer_Agent
+    ports:
+      - "8003:8003"
+    environment:
+      - ASI1_API_KEY=${ASI1_API_KEY}
+```
+
+### PACKAGE DEPENDENCIES
+```json
+{
+  "dependencies": {
+    "next": "^14.0.0",
+    "react": "^18.0.0",
+    "react-dom": "^18.0.0",
+    "tailwindcss": "^3.0.0",
+    "mapbox-gl": "^2.15.0",
+    "recharts": "^2.8.0",
+    "axios": "^1.6.0",
+    "react-query": "^3.39.0",
+    "zustand": "^4.4.0",
+    "xlsx": "^0.18.0",
+    "@shadcn/ui": "latest"
+  }
+}
+```
+
+---
+
+## TESTING STRATEGY
+
+### UNIT TESTING
+- **Component Testing:** React Testing Library
+- **API Integration:** Mock Service Worker (MSW)
+- **Utility Functions:** Jest testing framework
+
+### INTEGRATION TESTING
+- **Agent Connectivity:** End-to-end API testing
+- **Data Flow:** Complete user journey testing
+- **Cross-browser:** Chrome, Firefox, Safari compatibility
+
+### PERFORMANCE TESTING
+- **Load Testing:** Concurrent user simulation
+- **API Response Times:** Latency measurement
+- **Memory Usage:** Resource consumption monitoring
+
+---
+
+## SECURITY CONSIDERATIONS
+
+### DATA PROTECTION
+- **API Security:** CORS configuration for agent endpoints
+- **Input Validation:** Sanitization of user inputs
+- **File Upload Security:** Type validation and size limits
+
+### PRIVACY COMPLIANCE
+- **Data Minimization:** Only collect necessary information
+- **User Consent:** Clear data usage policies
+- **Audit Logging:** Track data access and modifications
+
+---
+
+## DEPLOYMENT STRATEGY
+
+### DEVELOPMENT ENVIRONMENT
+- **Local Development:** Docker Compose for full stack
+- **Hot Reloading:** Next.js development server
+- **Agent Debugging:** Individual container logs
+
+### PRODUCTION CONSIDERATIONS
+- **Container Orchestration:** Kubernetes or Docker Swarm
+- **Load Balancing:** Nginx reverse proxy
+- **SSL Certificates:** HTTPS encryption
+- **Monitoring:** Application performance monitoring
+
+---
+
+## SUCCESS METRICS
+
+### TECHNICAL KPIs
+- **Page Load Time:** < 3 seconds initial load
+- **API Response Time:** < 500ms average
+- **Uptime:** 99.9% availability target
+- **Error Rate:** < 1% failed requests
+
+### USER EXPERIENCE KPIs
+- **Task Completion Rate:** > 90% for core workflows
+- **User Satisfaction:** Positive feedback from health affairs professionals
+- **Feature Adoption:** Usage analytics for each page
+- **Export Usage:** Download and export feature utilization
+
+---
+
+## MAINTENANCE & SUPPORT
+
+### ONGOING DEVELOPMENT
+- **Feature Enhancements:** Based on user feedback
+- **Agent Updates:** Integration of new agent capabilities
+- **Performance Optimization:** Continuous improvement
+- **Security Updates:** Regular dependency updates
+
+### DOCUMENTATION
+- **User Guides:** Comprehensive usage documentation
+- **API Documentation:** Agent endpoint specifications
+- **Developer Guides:** Setup and deployment instructions
+- **Troubleshooting:** Common issues and solutions
+
+---
+
+## APPENDICES
+
+### APPENDIX A: AGENT ENDPOINT SPECIFICATIONS
+[Detailed API documentation for each agent service]
+
+### APPENDIX B: DATA SCHEMA DEFINITIONS
+[Database schema and data model specifications]
+
+### APPENDIX C: UI COMPONENT LIBRARY
+[Design system and component specifications]
+
+### APPENDIX D: DEPLOYMENT SCRIPTS
+[Docker configurations and deployment automation]
+
+---
+
+**Document Version:** 1.0
+**Last Updated:** [Current Date]
+**Next Review:** [Review Date]
+
+---
+
+This PRD serves as the definitive guide for the Vaccine Hesitancy Analysis Frontend Platform development. All technical decisions, feature implementations, and architectural choices should reference this document to ensure consistency and alignment with project objectives. 

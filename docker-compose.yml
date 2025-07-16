@@ -1,0 +1,104 @@
+version: '3.8'
+
+services:
+  # Frontend Application
+  frontend:
+    build: 
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_BASE_URL=http://localhost
+      - NEXT_PUBLIC_HESITANCY_AGENT_URL=http://hesitancy-insights-agent:8000
+      - NEXT_PUBLIC_X_ANALYSIS_AGENT_URL=http://x-analysis-agent:8001
+      - NEXT_PUBLIC_VACCINE_RESOURCE_AGENT_URL=http://vaccine-resource-agent:8002
+      - NEXT_PUBLIC_VOICE_ANALYZER_AGENT_URL=http://voice-analyzer-agent:8003
+    depends_on:
+      - hesitancy-insights-agent
+      - x-analysis-agent
+      - vaccine-resource-agent
+      - voice-analyzer-agent
+    networks:
+      - vaccine-hesitancy-network
+
+  # Vaccine Hesitancy Insights Agent
+  hesitancy-insights-agent:
+    build:
+      context: ./agents/Vaccine_Hesitancy_Insights_Agent
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - AGENT_NAME=hesitancy_insights_agent
+      - AGENT_PORT=8000
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_KEY=${SUPABASE_KEY}
+      - ASI1_API_KEY=${ASI1_API_KEY}
+    volumes:
+      - ./agents/Vaccine_Hesitancy_Insights_Agent:/app
+    networks:
+      - vaccine-hesitancy-network
+
+  # X Analysis Agent
+  x-analysis-agent:
+    build:
+      context: ./agents/X_Analysis_Agent
+      dockerfile: Dockerfile
+    ports:
+      - "8001:8001"
+    environment:
+      - AGENT_NAME=x_analysis_agent
+      - AGENT_PORT=8001
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_KEY=${SUPABASE_KEY}
+      - ASI1_API_KEY=${ASI1_API_KEY}
+      - TWITTER_API_KEY=${TWITTER_API_KEY}
+      - TWITTER_API_SECRET=${TWITTER_API_SECRET}
+    volumes:
+      - ./agents/X_Analysis_Agent:/app
+    networks:
+      - vaccine-hesitancy-network
+
+  # Vaccine Resource Agent
+  vaccine-resource-agent:
+    build:
+      context: ./agents/Vaccine_Resource_Agent
+      dockerfile: Dockerfile
+    ports:
+      - "8002:8002"
+    environment:
+      - AGENT_NAME=vaccine_resource_agent
+      - AGENT_PORT=8002
+      - QDRANT_URL=${QDRANT_URL}
+      - QDRANT_API_KEY=${QDRANT_API_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+    volumes:
+      - ./agents/Vaccine_Resource_Agent:/app
+    networks:
+      - vaccine-hesitancy-network
+
+  # Voice Analyzer Agent
+  voice-analyzer-agent:
+    build:
+      context: ./agents/Vaccine_Hesitancy_Voice_Analyzer_Agent
+      dockerfile: Dockerfile
+    ports:
+      - "8003:8003"
+    environment:
+      - AGENT_NAME=voice_analyzer_agent
+      - AGENT_PORT=8003
+      - ASI1_API_KEY=${ASI1_API_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+    volumes:
+      - ./agents/Vaccine_Hesitancy_Voice_Analyzer_Agent:/app
+    networks:
+      - vaccine-hesitancy-network
+
+networks:
+  vaccine-hesitancy-network:
+    driver: bridge
+
+volumes:
+  qdrant-data:
+    driver: local 

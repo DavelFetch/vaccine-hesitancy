@@ -1,0 +1,11 @@
+uagents 
+anthropic 
+mcp 
+mcp[cli]
+python-dotenv
+requests-oauthlib
+qdrant-client>=1.6.4
+langchain>=0.0.350
+langchain-openai>=0.0.5
+openai>=1.12.0
+tiktoken>=0.5.2 

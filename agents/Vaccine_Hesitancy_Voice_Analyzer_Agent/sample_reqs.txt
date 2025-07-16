@@ -1,0 +1,23 @@
+/analyze_text
+{
+    "text": "Speaker 1:\nI hit the streets to find out.\nHonestly, I personally got to that point, and I had assistance during the summit. I know a lot of people are scared about the vaccine, but I do believe in the science behind it.\nThey do simplify it. For every vaccine I got, I felt relieved — I just thought maybe it was too late.\n\nSpeaker 2:\nAnd the problem with that…\nI'm fully vaccinated. I think most of my colleagues are vaccinated. Probably around 70–75% at the VA are vaccinated, I believe.\n\nSpeaker 3:\nI mean, it's a debate. I understand different elements. From my point of view, I wouldn't have done it if I wasn't told to.\nEverybody was doing it, so you felt pressure.\nNow there's regret, because nobody really knows the long-term effects.\nA couple of my friends don't want to get it — that's their choice. They're veterans and they don't want to. I know a few others like that too.\n\nSpeaker 4:\nI also really understand why people don't want to get it. It's difficult.\nThat's why I feel like it should be a choice — or at least they should offer weekly testing for city workers who are constantly exposed.\n\nSpeaker 5 (interviewer?):\nPeople are still getting it. Do you think they have a right to say, \"I shouldn't have to get the vaccine\"?\n\nSpeaker 4 (continued):\nI think maybe there could be a reasonable accommodation — like 100% telework or something.\nI support showing that everyone is doing their part in the best way they can.\n\nSpeaker 6:\nHowever, I also believe we'd fail if we didn't act.\nThey wouldn't be saying that if they knew.\nI believe that certain communities — those most hurt — should also be empowered to fight the virus.\n\nSpeaker 7:\nThese are unusual times, exceptional times.\nPeople either get the vaccine, or they have to be tested every week, right?\n\nSpeaker 6:\nRight. So… it's not really optional.",
+    "analysis_options": {
+        "hesitancy_analysis": true,
+        "keyword_extraction": true,
+        "sentiment_analysis": true
+    }
+}
+
+{
+  "text": "Excerpts from the Transcript of an Interview Between CMO Dr. Kelly S. Ramsey and a RN in an OASAS State-operated Addiction Treatment Center (ATC) on COVID-19 Vaccine Hesitancy, 8/26/21\n\nWith respect to COVID-19 and when the vaccines first became available, what was your thought process regarding getting the vaccine?\nInitially it [the development of the vaccines] seemed really fast, that they got them ready. But then I talked to one of the doctors I used to work with and she told me she knew people involved in the development of both vaccines [Pfizer and Moderna] and they assured her that it was done properly and she got vaccinated, so alleviated that fear...",
+  "analysis_options": {
+    "hesitancy_analysis": true,
+    "keyword_extraction": true,
+    "sentiment_analysis": true
+  }
+}
+
+/analyze_audo
+
+
+
