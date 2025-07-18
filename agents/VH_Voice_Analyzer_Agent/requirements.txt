@@ -1,0 +1,33 @@
+# VH_Voice_Analyzer_Agent Dependencies
+
+# Core agent framework
+uagents
+
+# Environment and configuration
+python-dotenv
+
+# Data validation (used for Field in models)
+pydantic
+
+# HTTP requests
+requests
+
+# Audio processing
+librosa
+pydub
+
+# Numerical computing
+numpy
+pandas
+
+# Speech recognition
+SpeechRecognition
+
+# Machine learning (needed for COVID detection model)
+scikit-learn
+
+# HuggingFace for model loading
+huggingface-hub
+
+# Audio format support (needed for pydub)
+ffmpeg-python

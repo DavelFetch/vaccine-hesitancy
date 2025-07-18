@@ -1,0 +1,6 @@
+uagents
+python-dotenv
+requests
+openai
+qdrant-client
+pydantic

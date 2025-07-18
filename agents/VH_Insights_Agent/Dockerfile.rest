@@ -1,0 +1,16 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y gcc && rm -rf /var/lib/apt/lists/*
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY vh_rest_agent.py .
+# If you want to include vh_models.py for additional models, add:
+# COPY vh_models.py .
+
+EXPOSE 8005
+
+CMD ["python", "vh_rest_agent.py"]

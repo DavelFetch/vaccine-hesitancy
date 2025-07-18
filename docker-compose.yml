@@ -1,104 +1,163 @@
-version: '3.8'
-
-services:
-  # Frontend Application
-  frontend:
-    build: 
-      context: ./frontend
-      dockerfile: Dockerfile
-    ports:
-      - "3000:3000"
-    environment:
-      - NEXT_PUBLIC_API_BASE_URL=http://localhost
-      - NEXT_PUBLIC_HESITANCY_AGENT_URL=http://hesitancy-insights-agent:8000
-      - NEXT_PUBLIC_X_ANALYSIS_AGENT_URL=http://x-analysis-agent:8001
-      - NEXT_PUBLIC_VACCINE_RESOURCE_AGENT_URL=http://vaccine-resource-agent:8002
-      - NEXT_PUBLIC_VOICE_ANALYZER_AGENT_URL=http://voice-analyzer-agent:8003
-    depends_on:
-      - hesitancy-insights-agent
-      - x-analysis-agent
-      - vaccine-resource-agent
-      - voice-analyzer-agent
-    networks:
-      - vaccine-hesitancy-network
-
-  # Vaccine Hesitancy Insights Agent
-  hesitancy-insights-agent:
-    build:
-      context: ./agents/Vaccine_Hesitancy_Insights_Agent
-      dockerfile: Dockerfile
-    ports:
-      - "8000:8000"
-    environment:
-      - AGENT_NAME=hesitancy_insights_agent
-      - AGENT_PORT=8000
-      - SUPABASE_URL=${SUPABASE_URL}
-      - SUPABASE_KEY=${SUPABASE_KEY}
-      - ASI1_API_KEY=${ASI1_API_KEY}
-    volumes:
-      - ./agents/Vaccine_Hesitancy_Insights_Agent:/app
-    networks:
-      - vaccine-hesitancy-network
-
-  # X Analysis Agent
-  x-analysis-agent:
-    build:
-      context: ./agents/X_Analysis_Agent
-      dockerfile: Dockerfile
-    ports:
-      - "8001:8001"
-    environment:
-      - AGENT_NAME=x_analysis_agent
-      - AGENT_PORT=8001
-      - SUPABASE_URL=${SUPABASE_URL}
-      - SUPABASE_KEY=${SUPABASE_KEY}
-      - ASI1_API_KEY=${ASI1_API_KEY}
-      - TWITTER_API_KEY=${TWITTER_API_KEY}
-      - TWITTER_API_SECRET=${TWITTER_API_SECRET}
-    volumes:
-      - ./agents/X_Analysis_Agent:/app
-    networks:
-      - vaccine-hesitancy-network
-
-  # Vaccine Resource Agent
-  vaccine-resource-agent:
-    build:
-      context: ./agents/Vaccine_Resource_Agent
-      dockerfile: Dockerfile
-    ports:
-      - "8002:8002"
-    environment:
-      - AGENT_NAME=vaccine_resource_agent
-      - AGENT_PORT=8002
-      - QDRANT_URL=${QDRANT_URL}
-      - QDRANT_API_KEY=${QDRANT_API_KEY}
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
-    volumes:
-      - ./agents/Vaccine_Resource_Agent:/app
-    networks:
-      - vaccine-hesitancy-network
-
-  # Voice Analyzer Agent
-  voice-analyzer-agent:
-    build:
-      context: ./agents/Vaccine_Hesitancy_Voice_Analyzer_Agent
-      dockerfile: Dockerfile
-    ports:
-      - "8003:8003"
-    environment:
-      - AGENT_NAME=voice_analyzer_agent
-      - AGENT_PORT=8003
-      - ASI1_API_KEY=${ASI1_API_KEY}
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
-    volumes:
-      - ./agents/Vaccine_Hesitancy_Voice_Analyzer_Agent:/app
-    networks:
-      - vaccine-hesitancy-network
-
+# Network for inter-service communication
 networks:
   vaccine-hesitancy-network:
     driver: bridge
 
-volumes:
-  qdrant-data:
-    driver: local 
+services:
+  # ============================================================================
+  # VH_INSIGHTS_AGENT SERVICES
+  # ============================================================================
+  
+  vh-insights-chat-agent:
+    build:
+      context: ./agents/VH_Insights_Agent
+      dockerfile: Dockerfile.chat
+    ports:
+      - "8003:8003"
+    env_file:
+      - ./agents/VH_Insights_Agent/.env
+    networks:
+      - vaccine-hesitancy-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8003/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  vh-insights-rest-agent:
+    build:
+      context: ./agents/VH_Insights_Agent
+      dockerfile: Dockerfile.rest
+    ports:
+      - "8005:8005"
+    env_file:
+      - ./agents/VH_Insights_Agent/.env
+    networks:
+      - vaccine-hesitancy-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8005/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # ============================================================================
+  # VH_RESOURCE_AGENT SERVICES
+  # ============================================================================
+  
+  vh-resource-chat-agent:
+    build:
+      context: ./agents/VH_Resource_Agent
+      dockerfile: Dockerfile
+    ports:
+      - "8002:8002"
+    env_file:
+      - ./agents/VH_Resource_Agent/.env
+    networks:
+      - vaccine-hesitancy-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8002/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  vh-resource-rest-agent:
+    build:
+      context: ./agents/VH_Resource_Agent
+      dockerfile: Dockerfile.rest
+    ports:
+      - "8006:8006"
+    env_file:
+      - ./agents/VH_Resource_Agent/.env
+    networks:
+      - vaccine-hesitancy-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8006/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # ============================================================================
+  # VH_VOICE_ANALYZER_AGENT SERVICE
+  # ============================================================================
+  
+  vh-voice-analyzer-agent:
+    build:
+      context: ./agents/VH_Voice_Analyzer_Agent
+      dockerfile: Dockerfile
+    ports:
+      - "8004:8004"
+    env_file:
+      - ./agents/VH_Voice_Analyzer_Agent/.env
+    networks:
+      - vaccine-hesitancy-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8004/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # ============================================================================
+  # VH_X_ANALYSIS_AGENT SERVICE
+  # ============================================================================
+  
+  vh-x-analysis-agent:
+    build:
+      context: ./agents/VH_X_Analysis_Agent
+      dockerfile: Dockerfile
+    ports:
+      - "8001:8001"
+    env_file:
+      - ./agents/VH_X_Analysis_Agent/.env
+    networks:
+      - vaccine-hesitancy-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # ============================================================================
+  # FRONTEND SERVICE
+  # ============================================================================
+  
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    env_file:
+      - ./frontend/.env.local
+    environment:
+      - NODE_ENV=production
+      # Agent URLs for frontend configuration
+      - NEXT_PUBLIC_HESITANCY_AGENT_URL=http://vh-insights-rest-agent:8005
+      - NEXT_PUBLIC_X_ANALYSIS_AGENT_URL=http://vh-x-analysis-agent:8001
+      - NEXT_PUBLIC_VACCINE_RESOURCE_AGENT_URL=http://vh-resource-rest-agent:8006
+      - NEXT_PUBLIC_VOICE_ANALYZER_AGENT_URL=http://vh-voice-analyzer-agent:8004
+    networks:
+      - vaccine-hesitancy-network
+    depends_on:
+      - vh-insights-rest-agent
+      - vh-resource-rest-agent
+      - vh-voice-analyzer-agent
+      - vh-x-analysis-agent
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s 

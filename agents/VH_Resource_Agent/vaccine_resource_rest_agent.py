@@ -7,7 +7,6 @@ from typing import Optional
 import logging
 
 # REST agent config
-REST_AGENT_PORT = 8006
 VACCINE_RESOURCE_AGENT_ADDRESS = "agent1q0tds2u7q4ak8vj2pd9kn25pauuczm9pvqg50jmstuj36tvrf9c57fmj7hy"
 
 class ChatRequest(Model):
@@ -18,7 +17,7 @@ class ChatResponse(Model):
 
 agent = Agent(
     name="vaccine_resource_rest_agent",
-    port=REST_AGENT_PORT,
+    port=8006,
     seed="vaccine_resource_rest_agent_seed_2024",
     mailbox=True
 )
