@@ -2,16 +2,28 @@ from dotenv import load_dotenv
 from uagents import Agent, Context, Model
 from uagents.setup import fund_agent_if_low
 from datetime import datetime, timezone, timedelta
-import mcp
-from mcp.client.streamable_http import streamablehttp_client
+
+# ============================================================================
+# MCP IMPORTS (COMMENTED OUT - MIGRATING TO DIRECT POSTGRES)
+# ============================================================================
+# import mcp
+# from mcp.client.streamable_http import streamablehttp_client
+# from contextlib import AsyncExitStack
+
+# ============================================================================
+# DIRECT POSTGRES IMPORTS
+# ============================================================================
+import asyncpg
 import json
-import base64
+# import base64  # Still needed for other purposes
 import asyncio
 from typing import Dict, List, Optional, Any
-from contextlib import AsyncExitStack
 import os
 import re
 import requests
+from urllib.parse import quote_plus
+from decimal import Decimal
+from datetime import datetime, timezone, timedelta
 from x_analysis_models import (
     ScrapeTweetsRequest, ScrapeTweetsResponse,
     ScrapeMultipleQueriesRequest, ScrapeMultipleQueriesResponse,
@@ -36,19 +48,37 @@ class DebugResponse(Model):
 # Load environment variables
 load_dotenv()
 
+# ============================================================================
+# ENVIRONMENT VARIABLES
+# ============================================================================
 # Validate required environment variables - Updated for RapidAPI
 required_env_vars = {
-    "SUPABASE_ACCESS_TOKEN": os.getenv("SUPABASE_ACCESS_TOKEN"),
-    "SMITHERY_API_KEY": os.getenv("SMITHERY_API_KEY"),
+    "SUPABASE_ACCESS_TOKEN": os.getenv("SUPABASE_ACCESS_TOKEN"),  # Keep for potential MCP fallback
+    "SMITHERY_API_KEY": os.getenv("SMITHERY_API_KEY"),  # Keep for potential MCP fallback
     "SUPABASE_PROJECT_ID": os.getenv("SUPABASE_PROJECT_ID"),
     "ASI1_API_KEY": os.getenv("ASI1_API_KEY"),
     "RAPIDAPI_KEY": os.getenv("RAPIDAPI_KEY")
 }
 
-# Check if any required variables are missing
-missing_vars = [var for var, value in required_env_vars.items() if not value]
-if missing_vars:
-    raise ValueError(f"Missing required environment variables: {', '.join(missing_vars)}")
+# Direct Postgres Environment Variables (NEW)
+SUPABASE_DB_PASSWORD = os.getenv("SUPABASE_DB_PASSWORD")
+# URL encode the password to handle special characters (like in data loaders)
+SUPABASE_DB_PASSWORD = quote_plus(SUPABASE_DB_PASSWORD) if SUPABASE_DB_PASSWORD else ""
+USE_DIRECT_DB = os.getenv("USE_DIRECT_DB", "true").lower() == "true"
+
+# Check required variables based on connection type
+if USE_DIRECT_DB:
+    if not SUPABASE_DB_PASSWORD:
+        raise ValueError("Missing required environment variable for direct DB: SUPABASE_DB_PASSWORD")
+    # Check other required variables
+    missing_vars = [var for var, value in required_env_vars.items() if not value and var not in ["SUPABASE_ACCESS_TOKEN", "SMITHERY_API_KEY"]]
+    if missing_vars:
+        raise ValueError(f"Missing required environment variables: {', '.join(missing_vars)}")
+else:
+    # Check if any required variables are missing for MCP
+    missing_vars = [var for var, value in required_env_vars.items() if not value]
+    if missing_vars:
+        raise ValueError(f"Missing required environment variables for MCP: {', '.join(missing_vars)}")
 
 # ASI1 configuration
 ASI1_URL = "https://api.asi1.ai/v1/chat/completions"
@@ -79,9 +109,13 @@ def rapidapi_search_tweets(query, max_results=10):
     }
     
     try:
-        resp = requests.get(url, headers=RAPIDAPI_HEADERS, params=params)
+        # Add explicit timeouts to prevent hanging requests
+        resp = requests.get(url, headers=RAPIDAPI_HEADERS, params=params, timeout=(10, 30))  # 10s connect, 30s read
         resp.raise_for_status()
         return resp.json()
+    except requests.exceptions.Timeout:
+        print(f"RapidAPI timeout for query: {query}")
+        raise Exception(f"RapidAPI request timed out for query: {query}")
     except Exception as e:
         print(f"RapidAPI error: {str(e)}")
         raise
@@ -261,56 +295,111 @@ def extract_view_count(tweet_data):
         pass
     return 0
 
-class XAnalysisMCPClient:
+# ============================================================================
+# MCP CLIENT CLASS (COMMENTED OUT - MIGRATING TO DIRECT POSTGRES)
+# ============================================================================
+
+# ============================================================================
+# DIRECT POSTGRES CLIENT (NEW)
+# ============================================================================
+class XAnalysisDirectClient:
+    """Direct PostgreSQL client using asyncpg - replacement for MCP client"""
+    
     def __init__(self):
-        self.sessions: Dict[str, mcp.ClientSession] = {}
-        self.exit_stack = AsyncExitStack()
-        self.config = {
-            "accessToken": required_env_vars["SUPABASE_ACCESS_TOKEN"],
-            "readOnly": False,  # We need write access for storing tweets
-        }
+        self.pool = None
         self.project_id = required_env_vars["SUPABASE_PROJECT_ID"]
         self.max_retries = 3
         self.retry_delay = 1  # seconds
-
-    async def connect_supabase(self, ctx: Context):
-        """Connect to Supabase MCP server"""
+        
+        # Connection string using IP address instead of hostname to bypass DNS issues
+        # IP addresses from nslookup: 3.139.14.59, 3.13.175.194
+        self.dsn = f"postgresql://postgres.ylebxbxshnhtltukbjzx:{SUPABASE_DB_PASSWORD}@3.139.14.59:5432/postgres?sslmode=require"
+    
+    def convert_for_json(self, obj):
+        """Convert PostgreSQL data types to JSON-serializable types"""
+        if isinstance(obj, Decimal):
+            return float(obj)
+        elif isinstance(obj, datetime):
+            return obj.isoformat()
+        elif isinstance(obj, dict):
+            return {key: self.convert_for_json(value) for key, value in obj.items()}
+        elif isinstance(obj, list):
+            return [self.convert_for_json(item) for item in obj]
+        else:
+            return obj
+    
+    async def connect(self, ctx: Context):
+        """Initialize connection pool"""
         try:
-            config_b64 = base64.b64encode(json.dumps(self.config).encode()).decode()
-            url = f"https://server.smithery.ai/@supabase-community/supabase-mcp/mcp?config={config_b64}&api_key={required_env_vars['SMITHERY_API_KEY']}&profile=dual-barnacle-C2qHG5"
-
-            read_stream, write_stream, _ = await self.exit_stack.enter_async_context(
-                streamablehttp_client(url)
+            self.pool = await asyncpg.create_pool(
+                dsn=self.dsn,
+                min_size=1,
+                max_size=10,
+                command_timeout=120  # Increased from 60s to 120s for complex operations
             )
-            session = await self.exit_stack.enter_async_context(
-                mcp.ClientSession(read_stream, write_stream)
-            )
-            await session.initialize()
-            self.sessions["supabase"] = session
-            ctx.logger.info("Connected to Supabase MCP server")
+            ctx.logger.info("✅ Connected to Supabase Postgres directly via asyncpg")
         except Exception as e:
-            ctx.logger.error(f"Failed to connect to Supabase MCP: {str(e)}")
+            ctx.logger.error(f"❌ Failed to connect to Postgres: {str(e)}")
             raise
-
+    
     async def ensure_connection(self, ctx: Context):
-        """Ensure we have an active Supabase connection, reconnect if needed"""
-        if "supabase" not in self.sessions:
-            await self.connect_supabase(ctx)
+        """Ensure we have an active connection pool"""
+        if not self.pool:
+            await self.connect(ctx)
             return
-
+        
         try:
-            # Try a simple operation to check if session is alive
-            await self.sessions["supabase"].list_tools()
+            # Test connection with simple query
+            async with self.pool.acquire() as conn:
+                await conn.fetchval("SELECT 1")
         except Exception as e:
-            ctx.logger.warning(f"Supabase session check failed: {str(e)}. Attempting to reconnect...")
-            await self.cleanup()  # Clean up all sessions
-            await self.connect_supabase(ctx)  # Create new session
-
+            ctx.logger.warning(f"Connection check failed: {str(e)}. Attempting to reconnect...")
+            await self.cleanup()
+            await self.connect(ctx)
+    
     async def cleanup(self):
-        """Cleanup all resources"""
-        await self.exit_stack.aclose()
-        self.sessions.clear()
-
+        """Cleanup connection pool"""
+        if self.pool:
+            await self.pool.close()
+            self.pool = None
+    
+    async def execute_sql(self, query: str, ctx: Context):
+        """Execute SQL query and return results in MCP-compatible format"""
+        await self.ensure_connection(ctx)
+        
+        for attempt in range(self.max_retries):
+            try:
+                async with self.pool.acquire() as conn:
+                    # Execute query and fetch all results
+                    rows = await conn.fetch(query)
+                    
+                    # Convert asyncpg Records to list of dicts and handle data type conversion
+                    data = []
+                    for row in rows:
+                        row_dict = dict(row)
+                        # Convert non-JSON-serializable types
+                        converted_row = self.convert_for_json(row_dict)
+                        data.append(converted_row)
+                    
+                    # Return in MCP-compatible format
+                    class MockResult:
+                        def __init__(self, data):
+                            self.content = [MockContent(json.dumps(data))]
+                    
+                    class MockContent:
+                        def __init__(self, text):
+                            self.text = text
+                    
+                    return MockResult(data)
+                    
+            except Exception as e:
+                if attempt == self.max_retries - 1:
+                    ctx.logger.error(f"SQL execution failed after {self.max_retries} attempts: {str(e)}")
+                    raise
+                ctx.logger.warning(f"SQL attempt {attempt + 1} failed: {str(e)}. Retrying...")
+                await asyncio.sleep(self.retry_delay)
+                await self.ensure_connection(ctx)
+    
     async def ensure_table_exists(self, ctx: Context):
         """Ensure the vaccine_tweets table exists with correct schema"""
         try:
@@ -358,33 +447,18 @@ class XAnalysisMCPClient:
         except Exception as e:
             ctx.logger.error(f"Error ensuring table exists: {str(e)}")
             raise
-
-    async def execute_sql(self, query: str, ctx: Context):
-        """Execute SQL query with retry logic"""
-        for attempt in range(self.max_retries):
-            try:
-                await self.ensure_connection(ctx)
-                return await self.sessions["supabase"].call_tool("execute_sql", arguments={
-                    "project_id": self.project_id,
-                    "query": query
-                })
-            except Exception as e:
-                if attempt == self.max_retries - 1:  # Last attempt
-                    raise  # Re-raise the last exception
-                ctx.logger.warning(f"Query attempt {attempt + 1} failed: {str(e)}. Retrying...")
-                await asyncio.sleep(self.retry_delay)
-
+    
     def calculate_impact_score(self, likes: int, retweets: int, replies: int, quotes: int = 0) -> float:
         """Calculate impact score based on engagement metrics"""
         # Enhanced weighted formula: likes * 1 + retweets * 2 + replies * 3 + quotes * 2.5
         return (likes * 1) + (retweets * 2) + (replies * 3) + (quotes * 2.5)
-
+    
     def calculate_engagement_score(self, likes: int, retweets: int, replies: int, quotes: int = 0, bookmarks: int = 0) -> float:
         """Calculate engagement score (percentage) with enhanced metrics"""
         total_engagement = likes + retweets + replies + quotes + bookmarks
         # Normalize to a 0-100 scale (assuming max engagement of 10000)
         return min((total_engagement / 10000) * 100, 100)
-
+    
     async def store_tweets_batch(self, tweets_data: List[Dict], ctx: Context, includes_data: Dict = None) -> int:
         """Store multiple tweets with batch sentiment analysis and enhanced author information"""
         try:
@@ -510,7 +584,7 @@ class XAnalysisMCPClient:
         except Exception as e:
             ctx.logger.error(f"Error in batch tweet storage: {str(e)}")
             return 0
-
+    
     async def verify_tweets_stored(self, tweet_ids: List[str], ctx: Context) -> int:
         """Verify that tweets were actually stored in the database"""
         try:
@@ -537,7 +611,7 @@ class XAnalysisMCPClient:
         except Exception as e:
             ctx.logger.error(f"Error verifying tweets: {str(e)}")
             return 0
-
+    
     async def analyze_sentiment_batch(self, texts: List[str], ctx: Context) -> List[str]:
         """Analyze sentiment for multiple tweets in a single ASI1 API call"""
         try:
@@ -603,7 +677,7 @@ Respond with only the sentiment words separated by commas, nothing else. Example
             }
             
             ctx.logger.info(f"Analyzing sentiment for {len(texts)} tweets in batch...")
-            response = requests.post(ASI1_URL, headers=ASI1_HEADERS, json=payload)
+            response = requests.post(ASI1_URL, headers=ASI1_HEADERS, json=payload, timeout=(10, 30))  # 10s connect, 30s read
             
             if response.status_code == 200:
                 result = response.json()
@@ -637,7 +711,7 @@ Respond with only the sentiment words separated by commas, nothing else. Example
         except Exception as e:
             ctx.logger.error(f"Error in batch sentiment analysis: {str(e)}")
             return ["neutral"] * len(texts)
-
+    
     async def analyze_sentiment_with_asi1(self, text: str, ctx: Context) -> str:
         """Analyze sentiment using ASI1 (single tweet)"""
         try:
@@ -683,7 +757,7 @@ Respond with only the sentiment word, nothing else."""
             }
             
             ctx.logger.info(f"Analyzing sentiment for text: {clean_text[:50]}...")
-            response = requests.post(ASI1_URL, headers=ASI1_HEADERS, json=payload)
+            response = requests.post(ASI1_URL, headers=ASI1_HEADERS, json=payload, timeout=(10, 30))  # 10s connect, 30s read
             
             if response.status_code == 200:
                 result = response.json()
@@ -704,24 +778,28 @@ Respond with only the sentiment word, nothing else."""
             ctx.logger.error(f"Error in sentiment analysis: {str(e)}")
             return "neutral"
 
+# ============================================================================
+# MCP CLIENT CLASS (COMMENTED OUT - MIGRATING TO DIRECT POSTGRES)
+# ============================================================================
+
 # Initialize agent and client
 agent = Agent(
     name="x_analysis_rest_agent",
     port=8001,
     seed="x_analysis_rest_agent"
 )
-client = XAnalysisMCPClient()
+client = XAnalysisDirectClient() # This line is now commented out as MCP is removed
 
 @agent.on_event("startup")
 async def startup_function(ctx: Context):
     ctx.logger.info("Starting up X Analysis Rest Agent")
     try:
-        await client.connect_supabase(ctx)
-        ctx.logger.info("✅ Supabase MCP connection established")
+        await client.connect(ctx)
+        ctx.logger.info("✅ Supabase direct Postgres connection established")
         await client.ensure_table_exists(ctx)
         ctx.logger.info("✅ Database table ensured")
     except Exception as e:
-        ctx.logger.error(f"❌ Failed to initialize MCP connections: {str(e)}")
+        ctx.logger.error(f"❌ Failed to initialize direct Postgres connections: {str(e)}")
         raise
 
 @agent.on_rest_post("/x/scrape", ScrapeTweetsRequest, ScrapeTweetsResponse)
@@ -731,6 +809,7 @@ async def handle_scrape_tweets(ctx: Context, msg: ScrapeTweetsRequest) -> Scrape
         max_results = 10
         try:
             rapidapi_response = rapidapi_search_tweets(msg.query, max_results)
+            ctx.logger.info(f"✅ RapidAPI request completed successfully")
             ctx.logger.info(f"RapidAPI response structure: {list(rapidapi_response.keys())}")
             
             # DEBUG: Log actual response content to see what we're getting
@@ -781,7 +860,9 @@ async def handle_scrape_tweets(ctx: Context, msg: ScrapeTweetsRequest) -> Scrape
             )
         
         # Pass includes data to the storage function for better author information
+        ctx.logger.info(f"🔄 Starting to store {len(tweets)} tweets in database...")
         stored_count = await client.store_tweets_batch(tweets, ctx, includes)
+        ctx.logger.info(f"✅ Successfully stored {stored_count} tweets")
         tweet_ids = [tweet.get('id', '') for tweet in tweets if tweet.get('id')]
         verified_count = await client.verify_tweets_stored(tweet_ids, ctx)
         
@@ -1378,7 +1459,7 @@ async def handle_dashboard_data(ctx: Context, msg: DashboardDataRequest) -> Dash
             FROM vaccine_tweets 
             WHERE fetched_at >= '{start_date.isoformat()}'
             GROUP BY author_username, author_name, sentiment
-            ORDER BY total_likes + total_retweets DESC
+            ORDER BY (SUM(likes) + SUM(retweets)) DESC
             LIMIT 15;
         """
         user_insights_result = await client.execute_sql(user_insights_query, ctx)

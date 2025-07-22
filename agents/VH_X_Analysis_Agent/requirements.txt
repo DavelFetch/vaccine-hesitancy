@@ -1,4 +1,5 @@
 uagents
 python-dotenv
 requests
-mcp
+# mcp  # Commented out - migrated to direct Postgres
+asyncpg  # Added for direct Postgres connection

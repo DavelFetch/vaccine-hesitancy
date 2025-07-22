@@ -6,7 +6,7 @@ demographic dimensions through a unified interface with proper validation and se
 
 Features:
 - Single POST /vh endpoint (eliminates 20 separate endpoints)
-- Uses existing MCP client infrastructure (Supabase via Smithery.ai)
+- Direct PostgreSQL connection via asyncpg (migrated from MCP)
 - Proper SQL escaping and parameterized queries
 - Structured response format with pagination
 - Comprehensive validation and whitelisting
@@ -20,88 +20,123 @@ from dotenv import load_dotenv
 from uagents import Agent, Context, Model
 from datetime import datetime, UTC
 from typing import Dict, Any, List, Optional, Tuple
-import mcp
-from mcp.client.streamable_http import streamablehttp_client
+
+# ============================================================================
+# MCP IMPORTS (COMMENTED OUT - MIGRATING TO DIRECT POSTGRES)
+# ============================================================================
+# import mcp
+# from mcp.client.streamable_http import streamablehttp_client
+# from contextlib import AsyncExitStack
+
+# ============================================================================
+# DIRECT POSTGRES IMPORTS
+# ============================================================================
+import asyncpg
 import json
-import base64
+# import base64  # Still needed for other purposes
 import asyncio
-from contextlib import AsyncExitStack
 import os
+from urllib.parse import quote_plus
 
 # Load environment variables
 load_dotenv()
 
+# ============================================================================
+# ENVIRONMENT VARIABLES
+# ============================================================================
 # Validate required environment variables
 required_env_vars = {
-    "SUPABASE_ACCESS_TOKEN": os.getenv("SUPABASE_ACCESS_TOKEN"),
-    "SMITHERY_API_KEY": os.getenv("SMITHERY_API_KEY"),
+    "SUPABASE_ACCESS_TOKEN": os.getenv("SUPABASE_ACCESS_TOKEN"),  # Keep for potential MCP fallback
+    "SMITHERY_API_KEY": os.getenv("SMITHERY_API_KEY"),  # Keep for potential MCP fallback
     "SUPABASE_PROJECT_ID": os.getenv("SUPABASE_PROJECT_ID")
 }
 
-# Check if any required variables are missing
-missing_vars = [var for var, value in required_env_vars.items() if not value]
-if missing_vars:
-    raise ValueError(f"Missing required environment variables: {', '.join(missing_vars)}")
+# Direct Postgres Environment Variables (NEW)
+SUPABASE_DB_PASSWORD = os.getenv("SUPABASE_DB_PASSWORD")
+# URL encode the password to handle special characters (like in data loaders)
+SUPABASE_DB_PASSWORD = quote_plus(SUPABASE_DB_PASSWORD) if SUPABASE_DB_PASSWORD else ""
+USE_DIRECT_DB = os.getenv("USE_DIRECT_DB", "true").lower() == "true"
+
+# Check required variables based on connection type
+if USE_DIRECT_DB:
+    if not SUPABASE_DB_PASSWORD:
+        raise ValueError("Missing required environment variable for direct DB: SUPABASE_DB_PASSWORD")
+else:
+    # Check if any required variables are missing for MCP
+    missing_vars = [var for var, value in required_env_vars.items() if not value]
+    if missing_vars:
+        raise ValueError(f"Missing required environment variables for MCP: {', '.join(missing_vars)}")
 
 # ============================================================================
-# MCP CLIENT (REUSING EXISTING INFRASTRUCTURE)
+# DIRECT POSTGRES CLIENT
 # ============================================================================
 
-class HesitancyInsightsMCPClient:
-    """Reuse existing MCP client infrastructure"""
+class HesitancyInsightsDirectClient:
+    """Direct connection to Supabase using asyncpg"""
     def __init__(self):
-        self.session = None
-        self.exit_stack = AsyncExitStack()
-        self.config = {
-            "accessToken": required_env_vars["SUPABASE_ACCESS_TOKEN"],
-            "readOnly": True,
-        }
+        self.pool = None
         self.project_id = required_env_vars["SUPABASE_PROJECT_ID"]
         self.max_retries = 3
         self.retry_delay = 1  # seconds
+        
+        # Connection string using IP address instead of hostname to bypass DNS issues
+        # IP addresses from nslookup: 3.139.14.59, 3.13.175.194
+        self.dsn = f"postgresql://postgres.ylebxbxshnhtltukbjzx:{SUPABASE_DB_PASSWORD}@3.139.14.59:5432/postgres?sslmode=require"
 
     async def connect(self, ctx: Context):
-        """Connect to Supabase MCP server"""
-        config_b64 = base64.b64encode(json.dumps(self.config).encode())
-        url = f"https://server.smithery.ai/@supabase-community/supabase-mcp/mcp?config={config_b64}&api_key={required_env_vars['SMITHERY_API_KEY']}&profile=dual-barnacle-C2qHG5"
-
-        read_stream, write_stream, _ = await self.exit_stack.enter_async_context(
-            streamablehttp_client(url)
-        )
-        self.session = await self.exit_stack.enter_async_context(
-            mcp.ClientSession(read_stream, write_stream)
-        )
-        await self.session.initialize()
-        ctx.logger.info("Connected to Supabase MCP server")
+        """Connect to Supabase database"""
+        try:
+            self.pool = await asyncpg.create_pool(
+                dsn=self.dsn,
+                min_size=1,
+                max_size=10,
+                command_timeout=60
+            )
+            ctx.logger.info("✅ Connected to Supabase Postgres directly via asyncpg")
+        except Exception as e:
+            ctx.logger.error(f"❌ Failed to connect to Postgres: {str(e)}")
+            raise
 
     async def ensure_connection(self, ctx: Context):
         """Ensure we have an active connection, reconnect if needed"""
-        if not self.session:
+        if not self.pool:
             await self.connect(ctx)
             return
 
         try:
-            # Try a simple operation to check if session is alive
-            await self.session.list_tools()
+            # Test connection with simple query
+            async with self.pool.acquire() as conn:
+                await conn.fetchval("SELECT 1")
         except Exception as e:
-            ctx.logger.warning(f"Session check failed: {str(e)}. Attempting to reconnect...")
-            await self.cleanup()  # Clean up old session
-            await self.connect(ctx)  # Create new session
+            ctx.logger.warning(f"Connection check failed: {str(e)}. Attempting to reconnect...")
+            await self.cleanup()
+            await self.connect(ctx)
 
     async def cleanup(self):
         """Cleanup resources"""
-        await self.exit_stack.aclose()
-        self.session = None
+        if self.pool:
+            await self.pool.close()
+            self.pool = None
 
     async def execute_sql(self, query: str, ctx: Context):
         """Execute SQL query with retry logic"""
         for attempt in range(self.max_retries):
             try:
                 await self.ensure_connection(ctx)
-                return await self.session.call_tool("execute_sql", arguments={
-                    "project_id": self.project_id,
-                    "query": query
-                })
+                async with self.pool.acquire() as conn:
+                    # Execute query and fetch all results
+                    rows = await conn.fetch(query)
+                    
+                    # Return in MCP-compatible format (mock result object)
+                    class MockResult:
+                        def __init__(self, data):
+                            self.content = [MockContent(json.dumps([dict(row) for row in data]))]
+                    
+                    class MockContent:
+                        def __init__(self, text):
+                            self.text = text
+                    
+                    return MockResult(rows)
             except Exception as e:
                 if attempt == self.max_retries - 1:  # Last attempt
                     raise  # Re-raise the last exception
@@ -120,7 +155,7 @@ agent = Agent(
     mailbox=False
 )
 
-client = HesitancyInsightsMCPClient()
+client = HesitancyInsightsDirectClient()
 
 # ============================================================================
 # REQUEST/RESPONSE MODELS
@@ -533,21 +568,23 @@ async def get_dimensions(ctx: Context) -> VHDimensionsResponse:
 async def health_check(ctx: Context) -> HealthResponse:
     """Health check endpoint"""
     try:
-        # Test MCP connection
-        mcp_connected = False
+        # Test Direct Postgres connection
+        db_connected = False
         try:
             await client.ensure_connection(ctx)
-            await client.session.list_tools()
-            mcp_connected = True
+            # Test with a simple query
+            async with client.pool.acquire() as conn:
+                await conn.fetchval("SELECT 1")
+            db_connected = True
         except Exception as e:
-            ctx.logger.warning(f"MCP connection test failed: {e}")
+            ctx.logger.warning(f"Database connection test failed: {e}")
         
-        ctx.logger.info(f"Health check: mcp_connected={mcp_connected}")
+        ctx.logger.info(f"Health check: db_connected={db_connected}")
         
         return HealthResponse(
-            status="healthy" if mcp_connected else "degraded",
+            status="healthy" if db_connected else "degraded",
             timestamp=datetime.now(UTC).isoformat(),
-            mcp_connected=mcp_connected
+            mcp_connected=db_connected  # Keep field name for compatibility, but it's actually db_connected
         )
         
     except Exception as e:
@@ -569,12 +606,12 @@ async def startup(ctx: Context):
     ctx.logger.info(f"📍 Agent address: {agent.address}")
     ctx.logger.info(f"🌐 REST API available at: http://localhost:8005")
     
-    # Connect to MCP server
+    # Connect to Direct Postgres
     try:
         await client.connect(ctx)
-        ctx.logger.info("✅ Connected to Supabase MCP server")
+        ctx.logger.info("✅ Connected to Supabase Postgres directly")
     except Exception as e:
-        ctx.logger.error(f"❌ MCP connection failed: {e}")
+        ctx.logger.error(f"❌ Direct Postgres connection failed: {e}")
     
     ctx.logger.info("📋 Available endpoints:")
     ctx.logger.info("   • POST /vh        - Generic vaccine hesitancy data query")
@@ -604,7 +641,7 @@ if __name__ == "__main__":
 
 Features:
 • Single POST /vh endpoint (eliminates 20 separate endpoints)
-• Uses existing MCP infrastructure (Supabase via Smithery.ai)
+• Direct PostgreSQL connection via asyncpg (migrated from MCP)
 • Proper SQL escaping and validation
 • Structured response format with pagination
 • 100 rows default limit

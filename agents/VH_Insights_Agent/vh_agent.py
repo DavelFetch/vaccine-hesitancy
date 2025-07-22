@@ -9,76 +9,200 @@ from uagents_core.contrib.protocols.chat import (
 from uagents import Agent, Context, Protocol
 from datetime import datetime, timezone
 from uuid import uuid4
-import mcp
-from mcp.client.streamable_http import streamablehttp_client
+
+# ============================================================================
+# MCP IMPORTS (COMMENTED OUT - MIGRATING TO DIRECT POSTGRES)
+# ============================================================================
+# import mcp
+# from mcp.client.streamable_http import streamablehttp_client
+# from contextlib import AsyncExitStack
+
+# ============================================================================
+# DIRECT POSTGRES IMPORTS
+# ============================================================================
+import asyncpg
 import json
-import base64
+# import base64  # Still needed for other purposes
 import asyncio
 from typing import Dict, Any, List
-from contextlib import AsyncExitStack
 import os
+from urllib.parse import quote_plus
 
 # Load environment variables
 load_dotenv()
 
+# ============================================================================
+# ENVIRONMENT VARIABLES
+# ============================================================================
+# MCP Environment Variables (keeping for potential fallback)
 SUPABASE_ACCESS_TOKEN = os.getenv("SUPABASE_ACCESS_TOKEN")
 SMITHERY_API_KEY = os.getenv("SMITHERY_API_KEY")
 SUPABASE_PROJECT_ID = os.getenv("SUPABASE_PROJECT_ID")
 ASI1_API_KEY = os.getenv("ASI1_API_KEY")
 
-if not SUPABASE_ACCESS_TOKEN or not SMITHERY_API_KEY or not SUPABASE_PROJECT_ID or not ASI1_API_KEY:
-    raise ValueError("Missing required environment variables.")
+# Direct Postgres Environment Variables (NEW)
+SUPABASE_DB_PASSWORD = os.getenv("SUPABASE_DB_PASSWORD")
+# URL encode the password to handle special characters (like in data loaders)
+SUPABASE_DB_PASSWORD = quote_plus(SUPABASE_DB_PASSWORD) if SUPABASE_DB_PASSWORD else ""
+USE_DIRECT_DB = os.getenv("USE_DIRECT_DB", "true").lower() == "true"
 
-class SupabaseMCPClient:
+# Check required environment variables based on connection type
+if USE_DIRECT_DB:
+    if not SUPABASE_DB_PASSWORD or not ASI1_API_KEY:
+        raise ValueError("Missing required environment variables for direct DB: SUPABASE_DB_PASSWORD, ASI1_API_KEY")
+else:
+    if not SUPABASE_ACCESS_TOKEN or not SMITHERY_API_KEY or not SUPABASE_PROJECT_ID or not ASI1_API_KEY:
+        raise ValueError("Missing required environment variables for MCP: SUPABASE_ACCESS_TOKEN, SMITHERY_API_KEY, SUPABASE_PROJECT_ID, ASI1_API_KEY")
+
+# ============================================================================
+# MCP CLIENT (COMMENTED OUT - MIGRATING TO DIRECT POSTGRES)
+# ============================================================================
+# class SupabaseMCPClient:
+#     def __init__(self):
+#         self.session = None
+#         self.exit_stack = AsyncExitStack()
+#         self.config = {
+#             "accessToken": SUPABASE_ACCESS_TOKEN,
+#             "readOnly": True,
+#         }
+#         self.project_id = SUPABASE_PROJECT_ID
+# 
+#     async def connect(self, ctx: Context):
+#         config_b64 = base64.b64encode(json.dumps(self.config).encode())
+#         url = f"https://server.smithery.ai/@supabase-community/supabase-mcp/mcp?config={config_b64}&api_key={SMITHERY_API_KEY}&profile=dual-barnacle-C2qHG5"
+#         read_stream, write_stream, _ = await self.exit_stack.enter_async_context(
+#             streamablehttp_client(url)
+#         )
+#         self.session = await self.exit_stack.enter_async_context(
+#             mcp.ClientSession(read_stream, write_stream)
+#         )
+#         await self.session.initialize()
+#         ctx.logger.info("Connected to Supabase MCP server")
+# 
+#     async def ensure_connection(self, ctx: Context):
+#         if not self.session:
+#             await self.connect(ctx)
+#             return
+#         
+#         try:
+#             await self.session.list_tools()
+#         except Exception as e:
+#             ctx.logger.warning(f"Session check failed: {str(e)}. Attempting to reconnect...")
+#             await self.cleanup()
+#             await self.connect(ctx)
+# 
+#     async def call_tool(self, tool_name: str, arguments: dict, ctx: Context):
+#         await self.ensure_connection(ctx)
+#         max_retries = 3
+#         for attempt in range(max_retries):
+#             try:
+#                 return await self.session.call_tool(tool_name, arguments=arguments)
+#             except Exception as e:
+#                 if attempt == max_retries - 1:
+#                     raise
+#                 ctx.logger.warning(f"Tool call attempt {attempt + 1} failed: {str(e)}. Retrying...")
+#                 await asyncio.sleep(1)
+#                 await self.ensure_connection(ctx)
+# 
+#     async def cleanup(self):
+#         await self.exit_stack.aclose()
+#         self.session = None
+
+# ============================================================================
+# DIRECT POSTGRES CLIENT (NEW)
+# ============================================================================
+class SupabaseDirectClient:
+    """Direct PostgreSQL client using asyncpg - replacement for MCP client"""
+    
     def __init__(self):
-        self.session = None
-        self.exit_stack = AsyncExitStack()
-        self.config = {
-            "accessToken": SUPABASE_ACCESS_TOKEN,
-            "readOnly": True,
-        }
-        self.project_id = SUPABASE_PROJECT_ID
-
+        self.pool = None
+        self.max_retries = 3
+        self.retry_delay = 1  # seconds
+        
+        # Connection string using IP address instead of hostname to bypass DNS issues
+        # IP addresses from nslookup: 3.139.14.59, 3.13.175.194
+        self.dsn = f"postgresql://postgres.ylebxbxshnhtltukbjzx:{SUPABASE_DB_PASSWORD}@3.139.14.59:5432/postgres?sslmode=require"
+    
     async def connect(self, ctx: Context):
-        config_b64 = base64.b64encode(json.dumps(self.config).encode())
-        url = f"https://server.smithery.ai/@supabase-community/supabase-mcp/mcp?config={config_b64}&api_key={SMITHERY_API_KEY}&profile=dual-barnacle-C2qHG5"
-        read_stream, write_stream, _ = await self.exit_stack.enter_async_context(
-            streamablehttp_client(url)
-        )
-        self.session = await self.exit_stack.enter_async_context(
-            mcp.ClientSession(read_stream, write_stream)
-        )
-        await self.session.initialize()
-        ctx.logger.info("Connected to Supabase MCP server")
-
+        """Initialize connection pool"""
+        try:
+            self.pool = await asyncpg.create_pool(
+                dsn=self.dsn,
+                min_size=1,
+                max_size=10,
+                command_timeout=60
+            )
+            ctx.logger.info("✅ Connected to Supabase Postgres directly via asyncpg")
+        except Exception as e:
+            ctx.logger.error(f"❌ Failed to connect to Postgres: {str(e)}")
+            raise
+    
     async def ensure_connection(self, ctx: Context):
-        if not self.session:
+        """Ensure we have an active connection pool"""
+        if not self.pool:
             await self.connect(ctx)
             return
         
         try:
-            await self.session.list_tools()
+            # Test connection with simple query
+            async with self.pool.acquire() as conn:
+                await conn.fetchval("SELECT 1")
         except Exception as e:
-            ctx.logger.warning(f"Session check failed: {str(e)}. Attempting to reconnect...")
+            ctx.logger.warning(f"Connection check failed: {str(e)}. Attempting to reconnect...")
             await self.cleanup()
             await self.connect(ctx)
-
+    
     async def call_tool(self, tool_name: str, arguments: dict, ctx: Context):
+        """
+        Maintain same interface as MCP client for minimal code changes
+        Currently only supports 'execute_sql' tool
+        """
+        if tool_name != "execute_sql":
+            raise ValueError(f"Unsupported tool: {tool_name}")
+        
+        query = arguments.get("query")
+        if not query:
+            raise ValueError("Missing 'query' in arguments")
+        
+        return await self.execute_sql(query, ctx)
+    
+    async def execute_sql(self, query: str, ctx: Context):
+        """Execute SQL query and return results in MCP-compatible format"""
         await self.ensure_connection(ctx)
-        max_retries = 3
-        for attempt in range(max_retries):
+        
+        for attempt in range(self.max_retries):
             try:
-                return await self.session.call_tool(tool_name, arguments=arguments)
+                async with self.pool.acquire() as conn:
+                    # Execute query and fetch all results
+                    rows = await conn.fetch(query)
+                    
+                    # Convert asyncpg Records to list of dicts (same format as MCP)
+                    data = [dict(row) for row in rows]
+                    
+                    # Return in MCP-compatible format
+                    class MockResult:
+                        def __init__(self, data):
+                            self.content = [MockContent(json.dumps(data))]
+                    
+                    class MockContent:
+                        def __init__(self, text):
+                            self.text = text
+                    
+                    return MockResult(data)
+                    
             except Exception as e:
-                if attempt == max_retries - 1:
+                if attempt == self.max_retries - 1:
+                    ctx.logger.error(f"SQL execution failed after {self.max_retries} attempts: {str(e)}")
                     raise
-                ctx.logger.warning(f"Tool call attempt {attempt + 1} failed: {str(e)}. Retrying...")
-                await asyncio.sleep(1)
+                ctx.logger.warning(f"SQL attempt {attempt + 1} failed: {str(e)}. Retrying...")
+                await asyncio.sleep(self.retry_delay)
                 await self.ensure_connection(ctx)
-
+    
     async def cleanup(self):
-        await self.exit_stack.aclose()
-        self.session = None
+        """Cleanup connection pool"""
+        if self.pool:
+            await self.pool.close()
+            self.pool = None
 
 # ASI1 configuration
 ASI1_URL = "https://api.asi1.ai/v1/chat/completions"
@@ -88,7 +212,7 @@ ASI1_HEADERS = {
 }
 
 class VaccineHesitancyAgent:
-    def __init__(self, mcp_client: SupabaseMCPClient):
+    def __init__(self, mcp_client: SupabaseDirectClient):
         self.mcp_client = mcp_client
         
     async def query_ons_data(self, refined_query: str, ctx: Context) -> Dict[str, Any]:
@@ -605,7 +729,7 @@ agent = Agent(
     mailbox=True
 )
 
-client = SupabaseMCPClient()
+client = SupabaseDirectClient()
 vh_agent = VaccineHesitancyAgent(client)
 
 @agent.on_event("startup")
@@ -614,9 +738,9 @@ async def startup_function(ctx: Context):
     ctx.logger.info("📊 Capabilities: ONS demographic data + Twitter sentiment analysis")
     try:
         await client.connect(ctx)
-        ctx.logger.info("✅ Connected to Supabase MCP server")
+        ctx.logger.info("✅ Connected to Supabase Postgres directly via asyncpg")
     except Exception as e:
-        ctx.logger.error(f"❌ Failed to connect to MCP server: {str(e)}")
+        ctx.logger.error(f"❌ Failed to connect to Postgres: {str(e)}")
         raise
 
 @chat_proto.on_message(model=ChatMessage)
