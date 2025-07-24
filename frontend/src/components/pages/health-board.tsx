@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { hesitancyInsightsApi, fetchAllRegionsData, normalizeRegionName, buildRegionValueMap } from '@/lib/api/hesitancy-insights';
 import { Button, Select, Loading } from '@/components/ui';
@@ -19,6 +19,49 @@ export function HealthBoard() {
   const [viewType, setViewType] = useState<ViewType>('map');
   const [selectedSubgroup, setSelectedSubgroup] = useState<string>('');
   const [selectedBarrierGroup, setSelectedBarrierGroup] = useState<string>('');
+
+  // Chat state management
+  const [messages, setMessages] = useState([
+    { role: 'ai', text: 'Hello! I can help you analyze vaccine hesitancy data. Ask me questions about the demographics, trends, or specific regions you see in the dashboard.' }
+  ]);
+  const [input, setInput] = useState('');
+  const [loading, setLoading] = useState(false);
+  const chatBottomRef = useRef<HTMLDivElement>(null);
+
+  // Scroll to bottom on new message
+  useEffect(() => {
+    chatBottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
+
+  // Backend endpoint for VH Insights chat
+  const BACKEND_ENDPOINT = 'http://localhost:8005/vh_chat';
+
+  // Send message handler
+  const sendMessage = async () => {
+    if (!input.trim() || loading) return;
+    const userMsg = { role: 'user', text: input };
+    setMessages(msgs => [...msgs, userMsg]);
+    setLoading(true);
+    try {
+      const res = await fetch(BACKEND_ENDPOINT, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: input })
+      });
+      if (!res.ok) throw new Error('Server error');
+      const data = await res.json();
+      setMessages(msgs => [...msgs, { role: 'ai', text: data.response || 'No response from AI.' }]);
+    } catch (e) {
+      setMessages(msgs => [...msgs, { role: 'ai', text: 'Sorry, there was an error contacting the VH Insights Agent.' }]);
+    }
+    setInput('');
+    setLoading(false);
+  };
+
+  // Handle Enter key
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') sendMessage();
+  };
 
   // Validation helper function
   const isValidDimensionValue = useCallback((dimension: string, value: string) => {
@@ -416,6 +459,41 @@ export function HealthBoard() {
       {/* Main Visualization */}
       <div className="bg-white border border-gray-200 rounded-lg p-6">
         {renderVisualization()}
+      </div>
+
+      {/* Chat Panel */}
+      <div className="bg-white border border-gray-200 rounded-lg p-6">
+        <h3 className="text-lg font-semibold mb-4 text-gray-900">Ask the AI</h3>
+        <div className="flex flex-col h-64 border border-gray-300 rounded-lg p-4 overflow-y-auto">
+          {messages.map((msg, index) => (
+            <div key={index} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'} mb-2`}>
+              <div className={`p-2 rounded-lg ${msg.role === 'user' ? 'bg-blue-500 text-white' : 'bg-gray-200 text-gray-800'}`}>
+                {msg.text}
+              </div>
+            </div>
+          ))}
+          {loading && (
+            <div className="flex justify-start mb-2">
+              <div className="p-2 rounded-lg bg-gray-200 text-gray-800">
+                AI is typing...
+              </div>
+            </div>
+          )}
+          <div ref={chatBottomRef} />
+        </div>
+        <div className="mt-4 flex space-x-2">
+          <input
+            type="text"
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder="Ask a question about the data..."
+            className="flex-1 p-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+          <Button onClick={sendMessage} disabled={loading || !input.trim()}>
+            {loading ? 'Sending...' : 'Send'}
+          </Button>
+        </div>
       </div>
 
       {/* Data Summary */}

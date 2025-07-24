@@ -20,6 +20,9 @@ from dotenv import load_dotenv
 from uagents import Agent, Context, Model
 from datetime import datetime, UTC
 from typing import Dict, Any, List, Optional, Tuple
+from uagents_core.contrib.protocols.chat import ChatMessage, TextContent, ChatAcknowledgement
+from datetime import datetime
+from uuid import uuid4
 
 # ============================================================================
 # MCP IMPORTS (COMMENTED OUT - MIGRATING TO DIRECT POSTGRES)
@@ -595,6 +598,69 @@ async def health_check(ctx: Context) -> HealthResponse:
             mcp_connected=False
         )
 
+# VH Insights Agent address (chat agent)
+VH_AGENT_ADDRESS = "agent1qwx5r73e4ch666aq0lr6p2ulhmrypyk9rvckd4gs6cxyjwh87vs4g06fy7t"
+
+class ChatRequest(Model):
+    message: str
+
+class ChatResponse(Model):
+    response: str
+
+@agent.on_rest_post("/vh_chat", ChatRequest, ChatResponse)
+async def handle_vh_chat(ctx: Context, req: ChatRequest) -> ChatResponse:
+    """
+    Relay chat endpoint for VH Insights Agent (chat protocol).
+    Accepts a message, relays to VH agent as ChatMessage, and returns the response.
+    Handles ChatAcknowledgement as per chat protocol.
+    """
+    ctx.logger.info(f"[REST] Received /vh_chat request: {req.message}")
+    ctx.logger.info(f"[REST] Using VH agent address: {VH_AGENT_ADDRESS}")
+    chat_msg = ChatMessage(
+        timestamp=datetime.utcnow(),
+        msg_id=uuid4(),
+        content=[TextContent(type="text", text=req.message)]
+    )
+    try:
+        # Wait for ChatMessage, ignore ChatAcknowledgement
+        timeout = 60
+        start = datetime.utcnow().timestamp()
+        while True:
+            reply_obj = await ctx.send_and_receive(
+                VH_AGENT_ADDRESS,
+                chat_msg,
+                response_type=(ChatAcknowledgement, ChatMessage),
+                timeout=timeout
+            )
+            ctx.logger.info(f"[REST] Received reply: {reply_obj}")
+            if isinstance(reply_obj, tuple):
+                reply_msg, status = reply_obj
+            else:
+                reply_msg = reply_obj
+                status = None
+            if isinstance(reply_msg, ChatAcknowledgement):
+                # Got ack, keep waiting for ChatMessage
+                elapsed = datetime.utcnow().timestamp() - start
+                if elapsed > timeout:
+                    return ChatResponse(response="Timeout waiting for agent response.")
+                continue
+            elif isinstance(reply_msg, ChatMessage):
+                # Extract text from the first TextContent in the response
+                reply_text = None
+                for item in getattr(reply_msg, "content", []):
+                    if isinstance(item, TextContent):
+                        reply_text = item.text
+                        break
+                if not reply_text:
+                    reply_text = "No text content in agent response."
+                return ChatResponse(response=reply_text)
+            else:
+                # Unexpected type
+                return ChatResponse(response="Unexpected response type from agent.")
+    except Exception as e:
+        ctx.logger.error(f"[REST] Error in send_and_receive: {str(e)}")
+        return ChatResponse(response=f"Error: {str(e)}")
+
 # ============================================================================
 # AGENT LIFECYCLE
 # ============================================================================
@@ -615,6 +681,7 @@ async def startup(ctx: Context):
     
     ctx.logger.info("📋 Available endpoints:")
     ctx.logger.info("   • POST /vh        - Generic vaccine hesitancy data query")
+    ctx.logger.info("   • POST /vh_chat   - Relay chat to VH Insights Agent (chat protocol)")
     ctx.logger.info("   • GET  /dimensions - Available dimensions lookup")
     ctx.logger.info("   • GET  /health     - Health check")
     
@@ -622,6 +689,9 @@ async def startup(ctx: Context):
     ctx.logger.info("   curl -X POST http://localhost:8005/vh \\")
     ctx.logger.info("        -H 'Content-Type: application/json' \\")
     ctx.logger.info("        -d '{\"dimension\": \"region\", \"value\": \"England\"}'")
+    ctx.logger.info("   curl -X POST http://localhost:8005/vh_chat \\")
+    ctx.logger.info("        -H 'Content-Type: application/json' \\")
+    ctx.logger.info("        -d '{\"message\": \"What are the main reasons for vaccine hesitancy?\"}'")
 
 @agent.on_event("shutdown")
 async def shutdown(ctx: Context):
