@@ -53,8 +53,10 @@ export class XAnalysisApi extends BaseApiClient {
   }
 
   // Scrape Tweets (new)
-  async scrapeTweets(query: string, range?: string): Promise<any> {
-    return this.post('/x/scrape', { query, range });
+  async scrapeTweets(query: string, range?: string, timeout?: number): Promise<any> {
+    const resp = await this.post('/x/scrape', { query, range }, { timeout });
+    console.log('[xAnalysisApi.scrapeTweets] Raw response from backend:', resp);
+    return resp;
   }
 
   // Convenience methods for common use cases

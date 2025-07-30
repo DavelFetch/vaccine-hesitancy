@@ -81,6 +81,7 @@ class ChatMessage(Model):
 - "What are the best practices for vaccine storage and handling?"
 - "How effective are flu vaccines in tropical regions?"
 - "What are the current childhood immunisation rates in the UK?"
+- "What are the main symptoms of COVID-19 caused by Omicron?"
 
 ## Usage
 

@@ -498,13 +498,24 @@ async def handle_chat_request(ctx: Context, sender: str, req: ChatRequest):
             final_json = final_response.json()
             response_text = final_json["choices"][0]["message"]["content"]
             ctx.logger.info("[ChatRequest] Received final response from ASI1")
+            ctx.logger.info(f"[ChatRequest] Final response text: {response_text}")
+            
+            # Check if ASI1 returned another tool call instead of a proper response
+            if response_text and "<tool_call>" in response_text:
+                ctx.logger.warning("[ChatRequest] ASI1 returned tool call instead of response, generating direct response")
+                # Generate a direct response based on search results
+                response_text = f"Based on the official health guidelines I searched:\n\n{tool_result[:1500]}...\n\nFor more detailed information, please consult healthcare professionals or official health authorities."
         else:
             response_text = resp_json["choices"][0]["message"]["content"]
             ctx.logger.warning(f"[ChatRequest] No tool calls requested! Direct response: {response_text[:100]}...")
             ctx.logger.info("[ChatRequest] No tool calls requested, using direct response")
+        
+        # Debug: Log what we're about to send
+        ctx.logger.info(f"[ChatRequest] About to send response: {response_text[:200]}...")
+        
         reply_msg = ChatResponse(response=response_text)
         await ctx.send(sender, reply_msg)
-        ctx.logger.info(f"[ChatRequest] Sent response message {reply_msg.response}")
+        ctx.logger.info(f"[ChatRequest] Sent response message")
     except Exception as e:
         ctx.logger.error(f"[ChatRequest] Error handling chat request: {str(e)}")
         error_response = ChatResponse(response=f"An error occurred: {str(e)}")

@@ -135,12 +135,26 @@ export function SocialMediaPage() {
     setScrapeMsg(null);
     try {
       const resp = await xAnalysisApi.scrapeTweets(scrapeQuery, timeRange);
-      if (resp && resp.status === 'success') {
-        setScrapeMsg(`✅ ${resp.response}`);
+      console.log('[handleScrape] Raw response from scrapeTweets:', resp);
+      // FIX: Check correct response structure
+      if (resp && resp.success && resp.data && resp.data.status === 'success') {
+        setScrapeMsg(`✅ ${resp.data.response}`);
       } else {
-        setScrapeMsg(`❌ ${resp?.response || 'Scraping failed.'}`);
+        console.warn('[handleScrape] Scrape response not success:', resp);
+        setScrapeMsg(`❌ ${resp?.data?.response || 'Scraping failed.'}`);
       }
     } catch (e: any) {
+      console.error('[handleScrape] Error caught:', e);
+      if (e && typeof e === 'object') {
+        console.error('[handleScrape] Error message:', e.message);
+        console.error('[handleScrape] Error stack:', e.stack);
+        if (e.response) {
+          console.error('[handleScrape] Error response:', e.response);
+        }
+        if (e.data) {
+          console.error('[handleScrape] Error data:', e.data);
+        }
+      }
       setScrapeMsg(`❌ ${e.message || 'Scraping failed.'}`);
     }
     setScrapeLoading(false);

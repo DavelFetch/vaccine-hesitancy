@@ -154,7 +154,7 @@ agent = Agent(
     name="vaccine_hesitancy_rest_agent",
     seed="vh_rest_agent_seed_2024",
     port=8005,
-    endpoint=["http://localhost:8005/submit"],
+    endpoint=["http://vh-insights-rest-agent:8005/submit"],  # Use Docker service name
     mailbox=False
 )
 

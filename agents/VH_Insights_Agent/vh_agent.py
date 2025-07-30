@@ -726,6 +726,7 @@ agent = Agent(
     name='vaccine_hesitancy_insights_agent',
     seed="vaccine_hesitancy_insights_agent_2024",
     port=8003,
+    endpoint=["http://vh-insights-chat-agent:8003/submit"],  # Use Docker service name
     mailbox=True
 )
 
