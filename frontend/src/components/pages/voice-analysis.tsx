@@ -200,6 +200,23 @@ export function VoiceAnalysisPage() {
         </div>
       </div>
 
+      {/* Processing Time Disclaimer */}
+      <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+        <div className="flex items-start space-x-3">
+          <div className="text-yellow-600 text-xl">⚠️</div>
+          <div>
+            <h4 className="font-semibold text-yellow-800 mb-1">Processing Time Notice</h4>
+            <p className="text-sm text-yellow-700">
+              <strong>Audio Analysis:</strong> May take 2-3 minutes to process. Please be patient and do not refresh the page.
+              <br />
+              <strong>Text Analysis:</strong> Usually completes within 30-60 seconds.
+              <br />
+              The system is analyzing your content for vaccine hesitancy patterns, which requires AI processing time.
+            </p>
+          </div>
+        </div>
+      </div>
+
       {/* Analysis Input */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Input Panel */}
@@ -243,7 +260,7 @@ export function VoiceAnalysisPage() {
             onClick={handleSubmit}
             disabled={loading}
           >
-            {loading ? 'Analyzing...' : 'Submit'}
+            {loading ? (analysisMode === 'audio' ? 'Processing Audio (2-3 min)...' : 'Analyzing Text...') : 'Submit'}
           </button>
           <button
             className="w-full py-2 mt-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 font-medium"
@@ -261,7 +278,9 @@ export function VoiceAnalysisPage() {
         <div className="bg-white p-6 rounded-lg shadow">
           <h3 className="text-lg font-semibold mb-4">Analysis Results</h3>
           {loading ? (
-            <div className="text-center text-blue-600">Analyzing...</div>
+            <div className="text-center text-blue-600">
+              {analysisMode === 'audio' ? 'Processing audio file... This may take 2-3 minutes.' : 'Analyzing text...'}
+            </div>
           ) : result ? (
             <div className="space-y-4">
               {'transcript' in result && (

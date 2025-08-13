@@ -4,3 +4,8 @@ requests
 openai
 qdrant-client
 pydantic
+PyMuPDF
+python-docx
+python-pptx
+openpyxl
+chardet

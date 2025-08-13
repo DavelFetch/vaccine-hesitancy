@@ -276,6 +276,25 @@ export function HealthBoard() {
     }
   }, []); // Only run once on mount
 
+  // Format agent responses to preserve markdown and whitespace
+  const formatResponse = (text: string) => {
+    // Preserve whitespace and convert line breaks
+    const withLineBreaks = text.replace(/\n/g, '<br />');
+    
+    // Handle basic markdown formatting
+    const formatted = withLineBreaks
+      .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')  // **bold**
+      .replace(/\*(.*?)\*/g, '<em>$1</em>')              // *italic*
+      .replace(/`(.*?)`/g, '<code class="bg-gray-100 px-1 py-0.5 rounded text-sm">$1</code>'); // `code`
+    
+    return (
+      <div 
+        className="whitespace-pre-wrap"
+        dangerouslySetInnerHTML={{ __html: formatted }}
+      />
+    );
+  };
+
   const renderVisualization = () => {
     if (isLoading) {
       return <Loading />;
@@ -468,7 +487,11 @@ export function HealthBoard() {
           {messages.map((msg, index) => (
             <div key={index} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'} mb-2`}>
               <div className={`p-2 rounded-lg ${msg.role === 'user' ? 'bg-blue-500 text-white' : 'bg-gray-200 text-gray-800'}`}>
-                {msg.text}
+                {msg.role === 'user' ? (
+                  msg.text
+                ) : (
+                  formatResponse(msg.text)
+                )}
               </div>
             </div>
           ))}

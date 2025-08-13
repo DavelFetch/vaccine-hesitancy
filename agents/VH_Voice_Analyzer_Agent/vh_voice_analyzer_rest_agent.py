@@ -568,6 +568,7 @@ agent = Agent(
     name="vaccine_hesitancy_voice_analyzer",
     port=8004,
     seed="vh_voice_analyzer_rest_agent_seed",
+    endpoint=["http://vh-voice-analyzer-rest-agent:8004/submit"],  # Use Docker service name
     mailbox=False  # REST-only agent
 )
 

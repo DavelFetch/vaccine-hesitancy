@@ -104,7 +104,7 @@ class QdrantVectorSearch:
                 collection_name=self.collection_name,
                 query_vector=query_vector,
                 limit=limit,
-                score_threshold=0.1,  # Only return results with relevance > 0.1
+                score_threshold=0.05,  # Only return results with relevance > 0.1
                 with_payload=True,
                 search_params={"hnsw_ef": 128, "exact": False}  # Optimize HNSW search
             )
@@ -240,10 +240,15 @@ MANDATORY BEHAVIOR:
 - ALWAYS respond in English only
 
 RESPONSE AFTER SEARCHING:
-- If relevant information found: Provide detailed answer citing specific documents and guidelines
-- If no relevant information found: "I searched the health guidelines database but found no specific information about [topic]. This database primarily contains COVID-19 treatment guidelines and general immunization information. For comprehensive vaccine information or personalized medical advice, please consult healthcare professionals or the NHS website."
+- ALWAYS use the search results provided to you, even if they're not a perfect match
+- If search results contain ANY relevant medical information: Provide a detailed answer based on that information
+- Even if the information is related but not exact (e.g., thrombocytopenia instead of myocarditis), use it to provide helpful context about vaccine safety
+- Always cite the specific document, chunk number, and relevance score in your response
+- Be helpful and informative with whatever information is available
+- Only respond with "no information found" if the search literally returns no results
+- If you find related information, explain how it connects to the user's question
 
-Remember: SEARCH FIRST with SPECIFIC TERMS, ALWAYS. The database scope is primarily COVID-focused. RESPOND IN ENGLISH ONLY."""
+Remember: SEARCH FIRST with SPECIFIC TERMS, ALWAYS. The database scope is primarily COVID-focused. RESPOND IN ENGLISH ONLY. BE HELPFUL WITH ANY INFORMATION FOUND."""
 }
 
 @chat_proto.on_message(model=ChatMessage)

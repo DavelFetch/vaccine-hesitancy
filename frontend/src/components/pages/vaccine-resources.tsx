@@ -1,6 +1,11 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { vaccineResourceApi, VaccineResourceApiClient } from '@/lib/api/vaccine-resource';
+import { FileUpload } from '@/components/ui/file-upload';
+import { VaccineChat } from '@/components/ui/vaccine-chat';
+import { Upload, MessageCircle, FileText, Plus, RefreshCw, Trash2 } from 'lucide-react';
 
 // --- Categories ---
 const categories = [
@@ -48,10 +53,10 @@ const documents = [
     name: 'WHO Position Paper: Vaccines Against Influenza (May 2022)',
     file: '/documents/WER9719-eng-fre.pdf',
     source: 'WHO',
-    categories: ['clinical', 'safety', 'policy']
+    categories: ['policy', 'safety']
   },
   {
-    name: 'CDC MMWR: COVID-19 Vaccine Recommendations 2024–25',
+    name: 'CDC MMWR: COVID-19 Vaccine Recommendations 2024–2025',
     file: '/documents/mm7337e2-H.pdf',
     source: 'CDC',
     categories: ['policy', 'safety']
@@ -60,7 +65,13 @@ const documents = [
     name: 'Childhood Immunisation Statistics – UK (May 2025)',
     file: '/documents/CBP-8556.pdf',
     source: 'UK Parliament Research Briefing',
-    categories: ['policy', 'safety']
+    categories: ['policy']
+  },
+  {
+    name: 'Myths and Facts about COVID-19 Vaccines',
+    file: '/documents/Myths and Facts about COVID-19 Vaccines _ CDC Archive.pdf',
+    source: 'CDC',
+    categories: ['public']
   },
   {
     name: 'WHO Position Paper Development Process',
@@ -77,207 +88,317 @@ const documents = [
 ];
 
 export function VaccineResourcesPage() {
-  // --- Chat State Management ---
-  const [messages, setMessages] = useState([
-    { role: 'ai', text: 'Hello! I can help you find information from official vaccine documents. What would you like to know?' }
-  ]);
-  const [input, setInput] = useState('');
-  const [loading, setLoading] = useState(false);
+  // --- State Management ---
   const [searchQuery, setSearchQuery] = useState('');
-  const chatBottomRef = useRef<HTMLDivElement>(null);
-
-  // Scroll to bottom on new message
-  useEffect(() => {
-    chatBottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
-
-  // --- Backend endpoint (adjust as needed) ---
-  const BACKEND_ENDPOINT = 'http://localhost:8006/chat';
-
-  // --- Send message handler ---
-  const sendMessage = async () => {
-    if (!input.trim() || loading) return;
-    const userMsg = { role: 'user', text: input };
-    setMessages(msgs => [...msgs, userMsg]);
-    setLoading(true);
-    try {
-      const res = await fetch(BACKEND_ENDPOINT, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: input })
-      });
-      if (!res.ok) throw new Error('Server error');
-      const data = await res.json();
-      setMessages(msgs => [...msgs, { role: 'ai', text: data.response || 'No response from AI.' }]);
-    } catch (e) {
-      setMessages(msgs => [...msgs, { role: 'ai', text: 'Sorry, there was an error contacting the AI agent.' }]);
+  const [activeTab, setActiveTab] = useState<'browse' | 'upload' | 'chat'>('browse');
+  
+  // Get supported file types
+  const { data: supportedTypesData } = useQuery({
+    queryKey: ['vaccine-supported-types'],
+    queryFn: async () => {
+      const response = await vaccineResourceApi.getSupportedTypes();
+      if (!response.success) throw new Error(response.error);
+      return response.data!;
     }
-    setInput('');
-    setLoading(false);
+  });
+
+  // Get uploaded documents
+  const { data: uploadedDocumentsData, refetch: refetchUploadedDocuments } = useQuery({
+    queryKey: ['vaccine-uploaded-documents'],
+    queryFn: async () => {
+      const response = await vaccineResourceApi.getUploadedDocuments();
+      if (!response.success) throw new Error(response.error);
+      return response.data!;
+    },
+    refetchInterval: 30000 // Refetch every 30 seconds to show new uploads
+  });
+
+  // Chat functionality
+  const handleSendMessage = async (message: string): Promise<string> => {
+    const response = await vaccineResourceApi.chat(message);
+    if (!response.success) throw new Error(response.error || 'Failed to send message');
+    return response.data!.response;
   };
 
-  // --- Handle Enter key ---
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter') sendMessage();
+  // File upload functionality
+  const handleFileUpload = async (file: File, metadata?: any): Promise<void> => {
+    const response = await vaccineResourceApi.uploadFile(file, metadata);
+    if (!response.success) throw new Error(response.error || 'Failed to upload file');
+    // Refresh the uploaded documents list after successful upload
+    await refetchUploadedDocuments();
   };
 
-  // Helper to get category object by key
-  const getCategory = (key: string) => categories.find(cat => cat.key === key);
+  // Delete document functionality
+  const handleDeleteDocument = async (docId: string): Promise<void> => {
+    if (!confirm('Are you sure you want to delete this document? This action cannot be undone.')) {
+      return;
+    }
+    
+    const response = await vaccineResourceApi.deleteDocument(docId);
+    if (!response.success) throw new Error(response.error || 'Failed to delete document');
+    
+    // Refresh the uploaded documents list after successful deletion
+    await refetchUploadedDocuments();
+  };
 
-  // --- Filtered documents for search ---
-  const filteredDocuments = documents.filter(doc => {
-    const q = searchQuery.trim().toLowerCase();
-    if (!q) return true;
-    const nameMatch = doc.name.toLowerCase().includes(q);
-    const sourceMatch = doc.source.toLowerCase().includes(q);
-    const categoryMatch = doc.categories.some(catKey => {
-      const cat = getCategory(catKey);
-      return cat && cat.name.toLowerCase().includes(q);
-    });
-    return nameMatch || sourceMatch || categoryMatch;
+  // Combine predefined and uploaded documents
+  const allDocuments = [
+    ...documents.map(doc => ({
+      ...doc,
+      isUploaded: false,
+      doc_id: doc.file,
+      upload_timestamp: '',
+      total_chunks: 0,
+      file_size: 0,
+      file_type: 'pdf'
+    })),
+    ...(uploadedDocumentsData?.documents || []).map(doc => ({
+      name: doc.title,
+      file: `#uploaded-${doc.doc_id}`,
+      source: doc.source,
+      categories: doc.categories,
+      isUploaded: true,
+      doc_id: doc.doc_id,
+      upload_timestamp: doc.upload_timestamp,
+      total_chunks: doc.total_chunks,
+      file_size: doc.file_size,
+      file_type: doc.file_type
+    }))
+  ];
+
+  // Filter documents based on search query
+  const filteredDocuments = allDocuments.filter(doc => {
+    if (!searchQuery) return true;
+    
+    const query = searchQuery.toLowerCase();
+    const matchesName = doc.name.toLowerCase().includes(query);
+    const matchesSource = doc.source.toLowerCase().includes(query);
+    const matchesCategory = doc.categories.some(cat => 
+      categories.find(c => c.key === cat)?.name.toLowerCase().includes(query)
+    );
+    
+    return matchesName || matchesSource || matchesCategory;
   });
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h2 className="text-3xl font-bold text-gray-900">Vaccine Resources</h2>
-        <div className="text-sm text-gray-500">
-          Official medical documents and AI-powered search
+    <div className="max-w-7xl mx-auto px-4 py-8">
+      {/* Header */}
+      <div className="text-center mb-8">
+        <h1 className="text-4xl font-bold text-gray-900 mb-4">Vaccine Resources</h1>
+        <p className="text-lg text-gray-600 max-w-3xl mx-auto">
+          Access official vaccine guidelines, research, and policy documents. Upload new documents or chat with our AI assistant for personalized information.
+        </p>
+      </div>
+
+      {/* Tab Navigation */}
+      <div className="flex justify-center mb-8">
+        <div className="flex space-x-1 bg-gray-100 rounded-lg p-1">
+          <button
+            onClick={() => setActiveTab('browse')}
+            className={`flex items-center px-4 py-2 rounded-md font-medium text-sm transition-colors ${
+              activeTab === 'browse'
+                ? 'bg-white text-blue-600 shadow-sm'
+                : 'text-gray-600 hover:text-gray-900'
+            }`}
+          >
+            <FileText className="h-4 w-4 mr-2" />
+            Browse Documents
+          </button>
+          <button
+            onClick={() => setActiveTab('upload')}
+            className={`flex items-center px-4 py-2 rounded-md font-medium text-sm transition-colors ${
+              activeTab === 'upload'
+                ? 'bg-white text-blue-600 shadow-sm'
+                : 'text-gray-600 hover:text-gray-900'
+            }`}
+          >
+            <Upload className="h-4 w-4 mr-2" />
+            Upload Document
+          </button>
+          <button
+            onClick={() => setActiveTab('chat')}
+            className={`flex items-center px-4 py-2 rounded-md font-medium text-sm transition-colors ${
+              activeTab === 'chat'
+                ? 'bg-white text-blue-600 shadow-sm'
+                : 'text-gray-600 hover:text-gray-900'
+            }`}
+          >
+            <MessageCircle className="h-4 w-4 mr-2" />
+            AI Assistant
+          </button>
         </div>
       </div>
 
-      {/* Search */}
-      <div className="bg-white p-6 rounded-lg shadow">
-        <h3 className="text-lg font-semibold mb-4">Document Search</h3>
-        <div className="flex space-x-4">
-          <input 
-            type="text" 
-            className="flex-1 border border-gray-300 rounded-md px-4 py-2"
-            placeholder="Search official vaccine documents..."
-            value={searchQuery}
-            onChange={e => setSearchQuery(e.target.value)}
-          />
-        </div>
-      </div>
+      {/* Tab Content */}
+      {activeTab === 'browse' && (
+        <div>
+          {/* Search Bar */}
+          <div className="mb-8">
+            <div className="max-w-md mx-auto flex space-x-2">
+              <input
+                type="text"
+                placeholder="Search documents by name, source, or category..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              />
+              <button
+                onClick={() => refetchUploadedDocuments()}
+                className="px-3 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
+                title="Refresh uploaded documents"
+              >
+                <RefreshCw className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
 
-      {/* Document Library */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Document List */}
-        <div className="bg-white p-6 rounded-lg shadow">
-          <h3 className="text-lg font-semibold mb-4">Available Documents</h3>
-          <div className="space-y-3">
-            {filteredDocuments.length === 0 && (
-              <div className="text-gray-500 text-center py-8">No documents match your search.</div>
-            )}
-            {filteredDocuments.map((doc, idx) => (
-              <div key={doc.file} className="border border-gray-200 rounded-lg p-4 hover:bg-gray-50 flex items-center space-x-3">
-                <div className="text-2xl">📄</div>
-                <div className="flex-1">
-                  <div className="font-medium">{doc.name}</div>
-                  <div className="text-sm text-gray-500">{doc.source}</div>
-                  <div className="flex flex-wrap gap-2 mt-2">
-                    {doc.categories.map(catKey => {
-                      const cat = getCategory(catKey);
-                      return cat ? (
-                        <span key={cat.key} className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-700 border border-gray-200">
-                          <span className="mr-1">{cat.icon}</span>{cat.name}
-                        </span>
-                      ) : null;
-                    })}
-                  </div>
-                </div>
-                <a
-                  href={doc.file}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-blue-600 hover:text-blue-800 px-3 py-1 border border-blue-200 rounded"
+          {/* Category Filters */}
+          <div className="mb-8">
+            <h2 className="text-xl font-semibold text-gray-900 mb-4 text-center">Browse by Category</h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              {categories.map((cat) => (
+                <div
+                  key={cat.key}
+                  className={`text-center p-4 border border-gray-200 rounded-lg hover:bg-gray-50 cursor-pointer transition-all ${
+                    searchQuery === cat.name ? 'ring-2 ring-blue-400 bg-blue-50' : ''
+                  }`}
+                  onClick={() => setSearchQuery(cat.name)}
                 >
-                  View
-                </a>
+                  <div className="text-3xl mb-2">{cat.icon}</div>
+                  <div className="font-medium">{cat.name}</div>
+                  <div className="text-sm text-gray-500 mt-1">{cat.description}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Documents Grid */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {filteredDocuments.map((doc, index) => (
+              <div key={index} className={`bg-white border rounded-lg p-6 hover:shadow-md transition-shadow ${
+                doc.isUploaded ? 'border-green-200 bg-green-50' : 'border-gray-200'
+              }`}>
+                <div className="flex items-start justify-between mb-2">
+                  <h3 className="font-semibold text-gray-900">{doc.name}</h3>
+                  {doc.isUploaded && (
+                    <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                      📤 Uploaded
+                    </span>
+                  )}
+                </div>
+                <p className="text-sm text-gray-600 mb-2">Source: {doc.source}</p>
+                {doc.isUploaded && (
+                  <div className="text-xs text-gray-500 mb-3">
+                    <p>📄 {doc.file_type.toUpperCase()} • {VaccineResourceApiClient.formatFileSize(doc.file_size)}</p>
+                    <p>📊 {doc.total_chunks} chunks • Uploaded {new Date(doc.upload_timestamp).toLocaleDateString()}</p>
+                  </div>
+                )}
+                <div className="flex flex-wrap gap-1 mb-4">
+                  {doc.categories.map((catKey) => {
+                    const category = categories.find(c => c.key === catKey);
+                    return (
+                      <span
+                        key={catKey}
+                        className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                          catKey === 'user_upload' 
+                            ? 'bg-green-100 text-green-800' 
+                            : 'bg-blue-100 text-blue-800'
+                        }`}
+                      >
+                        {category?.icon || '📄'} {category?.name || 'User Upload'}
+                      </span>
+                    );
+                  })}
+                </div>
+                {doc.isUploaded ? (
+                  <div className="flex items-center justify-between">
+                    <div className="text-sm text-gray-600">
+                      <p>✅ Available for AI queries</p>
+                      <p className="text-xs text-gray-500 mt-1">Ask the AI assistant about this document</p>
+                    </div>
+                    <button
+                      onClick={() => handleDeleteDocument(doc.doc_id)}
+                      className="inline-flex items-center px-2 py-1 border border-red-200 text-xs font-medium rounded-md text-red-700 bg-red-50 hover:bg-red-100 transition-colors"
+                      title="Delete document"
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </button>
+                  </div>
+                ) : (
+                  <a
+                    href={doc.file}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center px-3 py-1.5 border border-transparent text-xs font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 transition-colors"
+                  >
+                    View Document
+                  </a>
+                )}
               </div>
             ))}
           </div>
-        </div>
 
-        {/* AI Chat */}
-        <div className="bg-white p-6 rounded-lg shadow">
-          <h3 className="text-lg font-semibold mb-4">AI Document Assistant</h3>
-          <div className="border border-gray-300 rounded-lg h-96 flex flex-col">
-            {/* Chat Messages */}
-            <div className="flex-1 p-4 overflow-y-auto space-y-3">
-              {messages.map((msg, idx) => (
-                <div key={idx} className={
-                  msg.role === 'ai'
-                    ? 'flex items-start space-x-3'
-                    : 'flex items-start space-x-3 justify-end'
-                }>
-                  {msg.role === 'ai' && (
-                    <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center text-white text-sm font-bold">AI</div>
-                  )}
-                  <div className={
-                    msg.role === 'ai'
-                      ? 'flex-1 bg-gray-100 rounded-lg p-3'
-                      : 'flex-1 bg-blue-500 text-white rounded-lg p-3 max-w-xs'
-                  }>
-                    <p className="text-sm whitespace-pre-line">{msg.text}</p>
-                  </div>
-                  {msg.role === 'user' && (
-                    <div className="w-8 h-8 bg-gray-400 rounded-full flex items-center justify-center text-white text-sm font-bold">U</div>
-                  )}
-                </div>
-              ))}
-              {loading && (
-                <div className="flex items-start space-x-3">
-                  <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center text-white text-sm font-bold">AI</div>
-                  <div className="flex-1 bg-gray-100 rounded-lg p-3">
-                    <p className="text-sm animate-pulse">Thinking...</p>
-                  </div>
-                </div>
-              )}
-              <div ref={chatBottomRef} />
+          {filteredDocuments.length === 0 && (
+            <div className="text-center py-12">
+              <p className="text-gray-500">No documents found matching your search.</p>
+              <button
+                onClick={() => setSearchQuery('')}
+                className="mt-2 text-blue-600 hover:text-blue-700 text-sm"
+              >
+                Clear search
+              </button>
             </div>
-            {/* Input */}
-            <div className="border-t p-4">
-              <div className="flex space-x-2">
-                <input
-                  type="text"
-                  className="flex-1 border border-gray-300 rounded-md px-3 py-2 text-sm"
-                  placeholder="Ask about vaccine guidelines..."
-                  value={input}
-                  onChange={e => setInput(e.target.value)}
-                  onKeyDown={handleKeyDown}
-                  disabled={loading}
-                />
-                <button
-                  className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 text-sm disabled:opacity-50"
-                  onClick={sendMessage}
-                  disabled={loading || !input.trim()}
-                >
-                  {loading ? 'Sending...' : 'Send'}
-                </button>
-              </div>
-            </div>
+          )}
+        </div>
+      )}
+
+      {activeTab === 'upload' && (
+        <div className="max-w-4xl mx-auto">
+          <div className="text-center mb-8">
+            <h2 className="text-2xl font-bold text-gray-900 mb-4">Upload New Document</h2>
+            <p className="text-gray-600">
+              Upload vaccine-related documents to expand our knowledge base. Supported formats include PDF, Word, PowerPoint, Excel, and text files.
+            </p>
           </div>
-        </div>
-      </div>
 
-      {/* Document Categories */}
-      <div className="bg-white p-6 rounded-lg shadow">
-        <h3 className="text-lg font-semibold mb-4">Document Categories</h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          {categories.map(cat => (
-            <div
-              key={cat.key}
-              className={`text-center p-4 border border-gray-200 rounded-lg hover:bg-gray-50 cursor-pointer transition-all ${searchQuery === cat.name ? 'ring-2 ring-blue-400 bg-blue-50' : ''}`}
-              onClick={() => setSearchQuery(cat.name)}
-            >
-              <div className="text-3xl mb-2">{cat.icon}</div>
-              <div className="font-medium">{cat.name}</div>
-              <div className="text-sm text-gray-500 mt-1">{cat.description}</div>
+          {supportedTypesData ? (
+            <FileUpload
+              onFileSelect={(file, metadata) => {
+                console.log('File selected:', file.name, metadata);
+              }}
+              onUpload={handleFileUpload}
+              supportedTypes={supportedTypesData.supported_types}
+              maxSizeMB={supportedTypesData.max_file_size_mb}
+              showMetadataForm={true}
+            />
+          ) : (
+            <div className="text-center py-12">
+              <p className="text-gray-500">Loading upload options...</p>
             </div>
-          ))}
+          )}
         </div>
-      </div>
+      )}
+
+      {activeTab === 'chat' && (
+        <div className="max-w-4xl mx-auto">
+          <div className="text-center mb-8">
+            <h2 className="text-2xl font-bold text-gray-900 mb-4">AI Assistant</h2>
+            <p className="text-gray-600">
+              Ask questions about vaccines, safety, guidelines, or any information from our document database.
+            </p>
+          </div>
+
+          <VaccineChat
+            onSendMessage={handleSendMessage}
+            placeholder="Ask about vaccines, side effects, guidelines, or specific documents..."
+          />
+        </div>
+      )}
     </div>
   );
+}
+
+// Default export for compatibility
+export default function VaccineResources() {
+  return <VaccineResourcesPage />;
 } 
