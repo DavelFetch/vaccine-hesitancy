@@ -1,7 +1,8 @@
 # VH_Voice_Analyzer_Agent Dependencies
 
 # Core agent framework
-uagents
+uagents==0.22.5
+uagents-core==0.3.5
 
 # Environment and configuration
 python-dotenv

@@ -411,6 +411,13 @@ export function HealthBoard() {
                 label: value
               }))}
             />
+            {/* Age Group Data Note */}
+            {selectedDimension === 'age_group' && (
+              <div className="mt-2 p-2 bg-blue-50 border border-blue-200 rounded text-xs text-blue-700">
+                <Info className="w-3 h-3 inline mr-1" />
+                Note: "Aged 16 to 171" = "Aged 16 to 17" (data entry error)
+              </div>
+            )}
           </div>
 
           {/* Subgroup Selector for age_sex */}
@@ -483,7 +490,7 @@ export function HealthBoard() {
       {/* Chat Panel */}
       <div className="bg-white border border-gray-200 rounded-lg p-6">
         <h3 className="text-lg font-semibold mb-4 text-gray-900">Ask the AI</h3>
-        <div className="flex flex-col h-64 border border-gray-300 rounded-lg p-4 overflow-y-auto">
+        <div className="flex flex-col h-[480px] border border-gray-300 rounded-lg p-4 overflow-y-auto">
           {messages.map((msg, index) => (
             <div key={index} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'} mb-2`}>
               <div className={`p-2 rounded-lg ${msg.role === 'user' ? 'bg-blue-500 text-white' : 'bg-gray-200 text-gray-800'}`}>
@@ -551,6 +558,16 @@ export function HealthBoard() {
             <p className="text-sm text-purple-700 capitalize">
               {viewType} View
             </p>
+          </div>
+        </div>
+        
+        {/* Data Quality Note */}
+        <div className="mt-4 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+          <div className="flex items-start space-x-2">
+            <Info className="w-4 h-4 text-amber-600 mt-0.5 flex-shrink-0" />
+            <div className="text-sm text-amber-800">
+              <span className="font-medium">Data Note:</span> Age group "Aged 16 to 171" is a data entry error from Excel scraping - this actually means "Aged 16 to 17".
+            </div>
           </div>
         </div>
       </div>

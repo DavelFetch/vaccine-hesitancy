@@ -56,7 +56,13 @@ export function VaccineChat({
     };
 
     setMessages(prev => [...prev, userMessage]);
-    setInputMessage('');
+    setInputMessage('');  // React state update
+    
+    // Direct DOM manipulation for immediate visual feedback
+    if (inputRef.current) {
+      inputRef.current.value = '';
+    }
+    
     setIsLoading(true);
 
     try {

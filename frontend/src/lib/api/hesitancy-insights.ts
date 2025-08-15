@@ -182,7 +182,7 @@ export class HesitancyInsightsApi extends BaseApiClient {
 
   getAvailableAgeGroups(): string[] {
     return [
-      "Aged 16 to 171",
+      "Aged 16 to 171", // Note: "171" is a data entry error, this actually means "16-17"
       "Aged 18 to 21",
       "Aged 22 to 25",
       "Aged 26 to 29",
@@ -199,7 +199,7 @@ export class HesitancyInsightsApi extends BaseApiClient {
     return [
       "All adults",
       "Buddhist",
-      "Christian",
+      "Christian, all denominations", // Updated to match actual database value
       "Hindu",
       "Jewish",
       "Muslim",
@@ -245,7 +245,7 @@ export class HesitancyInsightsApi extends BaseApiClient {
   getAvailableBarrierGroups(): string[] {
     return [
       "All persons",
-      "Aged 16 to 29",
+      "Aged 16 to 29", // Note: Some data sources may show "16 to 171" due to entry error, this means 16-17
       "Aged 30 to 49",
       "Aged 50 and over",
       "Men",
